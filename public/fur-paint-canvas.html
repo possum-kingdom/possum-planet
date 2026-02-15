@@ -1,0 +1,2098 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Fur Paint Ball</title>
+  <style>
+    :root {
+      --bg: #e9eef3;
+      --panel: rgba(255, 255, 255, 0.9);
+      --text: #1d2530;
+      --muted: #506071;
+      --accent: #5f6f84;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at top, #f5f8fc 0%, var(--bg) 70%);
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      color: var(--text);
+    }
+
+    #ui {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+      background: var(--panel);
+      border: 1px solid rgba(90, 110, 130, 0.25);
+      border-radius: 12px;
+      padding: 8px 10px;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 8px 20px rgba(40, 55, 70, 0.12);
+      width: min(220px, calc(100vw - 24px));
+      max-height: calc(100vh - 24px);
+      overflow: auto;
+    }
+
+    #uiHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    #ui h1 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.15;
+      letter-spacing: 0.15px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      margin-bottom: 2px;
+    }
+
+    select,
+    input[type="color"] {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid rgba(90, 110, 130, 0.35);
+      border-radius: 7px;
+      min-height: 30px;
+      background: rgba(255, 255, 255, 0.96);
+      color: var(--text);
+    }
+
+    button {
+      margin-top: 6px;
+      width: 100%;
+      border: 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: white;
+      background: linear-gradient(135deg, #6f8096 0%, #4e5f74 100%);
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:hover {
+      filter: brightness(1.05);
+    }
+
+    #menuToggle {
+      margin: 0;
+      width: auto;
+      min-width: 68px;
+      padding: 5px 8px;
+      font-size: 12px;
+      border-radius: 7px;
+    }
+
+    #clearFlowersBtn {
+      margin-top: 4px;
+      background: linear-gradient(135deg, #7f8ea0 0%, #5e6d80 100%);
+    }
+
+    #ui.collapsed {
+      width: auto;
+      max-width: calc(100vw - 24px);
+    }
+
+    #ui.collapsed #uiBody {
+      display: none;
+    }
+
+    canvas {
+      display: block;
+      touch-action: none;
+    }
+
+    @media (max-width: 720px) {
+      #ui {
+        top: 8px;
+        left: 8px;
+        width: min(210px, calc(100vw - 16px));
+        padding: 7px 9px;
+      }
+      .row {
+        margin: 5px 0;
+      }
+      input[type="range"] {
+        margin-bottom: 3px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="ui" class="collapsed">
+    <div id="uiHeader">
+      <h1>3D Fur Paint</h1>
+      <button id="menuToggle" type="button" aria-expanded="false">Open</button>
+    </div>
+    <div id="uiBody">
+    <div class="row">
+      <label for="toolMode">Tool</label>
+      <span id="toolModeValue">Fur</span>
+    </div>
+    <select id="toolMode">
+      <option value="fur">Fur Paint</option>
+      <option value="seed">Plant Seed</option>
+      <option value="pluck">Pluck / Place Rose</option>
+    </select>
+    <div class="row">
+      <label for="brushSize">Brush size</label>
+      <span id="brushSizeValue">0.06</span>
+    </div>
+    <input id="brushSize" type="range" min="0.06" max="0.5" step="0.01" value="0.06" />
+    <div class="row">
+      <label for="furLength">Fur length</label>
+      <span id="furLengthValue">0.08</span>
+    </div>
+    <input id="furLength" type="range" min="0.08" max="0.45" step="0.01" value="0.08" />
+    <div class="row">
+      <label for="furDensity">Fur density</label>
+      <span id="furDensityValue">240</span>
+    </div>
+    <input id="furDensity" type="range" min="30" max="240" step="10" value="240" />
+    <div class="row">
+      <label for="swish">Swish</label>
+      <span id="swishValue">0.32</span>
+    </div>
+    <input id="swish" type="range" min="0.00" max="1.00" step="0.01" value="0.32" />
+    <div class="row">
+      <label for="furColor">Fur color</label>
+      <span id="furColorValue">#DCE1E7</span>
+    </div>
+    <input id="furColor" type="color" value="#dce1e7" />
+    <button id="clearBtn" type="button">Clear Fur</button>
+    <button id="clearFlowersBtn" type="button">Clear Flowers</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x9fd4ff);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 50);
+    camera.position.set(0, 0.35, 1.9);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 0.05, 0);
+    controls.enablePan = false;
+    controls.minDistance = 0.65;
+    controls.maxDistance = 3.8;
+    controls.touches.ONE = THREE.TOUCH.ROTATE;
+    controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
+    controls.update();
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0xa6b4c5, 1.0);
+    hemi.position.set(0, 1, 0);
+    scene.add(hemi);
+
+    const key = new THREE.DirectionalLight(0xffffff, 0.9);
+    key.position.set(1.8, 2.2, 1.4);
+    scene.add(key);
+
+    const fill = new THREE.DirectionalLight(0xd7e3ef, 0.55);
+    fill.position.set(-2, 1.2, 1.1);
+    scene.add(fill);
+
+    const skyDome = new THREE.Mesh(
+      new THREE.SphereGeometry(30, 32, 20),
+      new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        depthWrite: false,
+        uniforms: {
+          topColor: { value: new THREE.Color(0x80c7ff) },
+          bottomColor: { value: new THREE.Color(0xf2f9ff) },
+          offset: { value: 0.32 },
+          exponent: { value: 0.75 }
+        },
+        vertexShader: `
+          varying vec3 vWorldPosition;
+          void main() {
+            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPosition.xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 topColor;
+          uniform vec3 bottomColor;
+          uniform float offset;
+          uniform float exponent;
+          varying vec3 vWorldPosition;
+          void main() {
+            float h = normalize(vWorldPosition + offset).y;
+            float t = pow(max(h, 0.0), exponent);
+            gl_FragColor = vec4(mix(bottomColor, topColor, t), 1.0);
+          }
+        `
+      })
+    );
+    scene.add(skyDome);
+
+    function createCloudTexture() {
+      const size = 256;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, size, size);
+
+      for (let i = 0; i < 7; i++) {
+        const x = size * (0.2 + Math.random() * 0.6);
+        const y = size * (0.22 + Math.random() * 0.5);
+        const r = size * (0.14 + Math.random() * 0.18);
+        const grad = ctx.createRadialGradient(x, y, 2, x, y, r);
+        grad.addColorStop(0, "rgba(255,255,255,0.9)");
+        grad.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    const cloudGroup = new THREE.Group();
+    const cloudTexture = createCloudTexture();
+    for (let i = 0; i < 12; i++) {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: cloudTexture,
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.45 + Math.random() * 0.22,
+          depthWrite: false
+        })
+      );
+      const ang = Math.random() * Math.PI * 2;
+      const radius = 5.8 + Math.random() * 4.2;
+      sprite.position.set(
+        Math.cos(ang) * radius,
+        1.1 + Math.random() * 2.1,
+        Math.sin(ang) * radius - 1.8
+      );
+      const s = 1.9 + Math.random() * 2.6;
+      sprite.scale.set(s * 1.9, s, 1);
+      sprite.material.rotation = (Math.random() - 0.5) * 0.6;
+      sprite.userData.baseX = sprite.position.x;
+      sprite.userData.drift = 0.04 + Math.random() * 0.05;
+      sprite.userData.phase = Math.random() * Math.PI * 2;
+      cloudGroup.add(sprite);
+    }
+    scene.add(cloudGroup);
+
+    const ballRadius = 0.58;
+    const ballGeo = new THREE.SphereGeometry(ballRadius, 72, 48);
+    const ballMat = new THREE.MeshStandardMaterial({
+      color: 0xf08b2d,
+      roughness: 0.74,
+      metalness: 0.02,
+      emissive: 0x2b1605,
+      emissiveIntensity: 0.08
+    });
+    const ball = new THREE.Mesh(ballGeo, ballMat);
+    ball.position.set(0, 0.06, 0);
+    scene.add(ball);
+
+    const MAX_UNDER_STRANDS = 36000;
+    const MAX_GUARD_STRANDS = 32000;
+    const MAX_GRASS_STRANDS = 26000;
+    const FUR_CELL_LON = 220;
+    const FUR_CELL_LAT = 110;
+    const GRASS_DELAY_SECONDS = 0.22;
+    const MAX_GRASS_BURSTS_PER_FRAME = 24;
+    const MIN_PAINT_INTERVAL_MS = 14;
+    const furGroup = new THREE.Group();
+    scene.add(furGroup);
+
+    const underGeo = new THREE.CylinderGeometry(0.0022, 0.0011, 1, 5, 1, true);
+    underGeo.translate(0, 0.5, 0);
+    const guardGeo = new THREE.CylinderGeometry(0.00135, 0.0005, 1, 4, 1, true);
+    guardGeo.translate(0, 0.5, 0);
+    const grassGeo = new THREE.CylinderGeometry(0.0015, 0.0028, 1, 4, 1, true);
+    grassGeo.translate(0, 0.5, 0);
+
+    function addWhiteVertexColors(geometry) {
+      const count = geometry.attributes.position.count;
+      const colors = new Float32Array(count * 3);
+      colors.fill(1);
+      geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    }
+    addWhiteVertexColors(underGeo);
+    addWhiteVertexColors(guardGeo);
+    addWhiteVertexColors(grassGeo);
+
+    const underMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+      transparent: false,
+      vertexColors: true
+    });
+    const guardMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+      transparent: false,
+      vertexColors: true
+    });
+    const grassMat = new THREE.MeshBasicMaterial({
+      color: 0x6dbb4f,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.94,
+      depthWrite: false,
+      vertexColors: true
+    });
+
+    function enableSwish(material, phaseScale, swayScale) {
+      material.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = { value: 0 };
+        shader.uniforms.uSwish = { value: 0.58 };
+        shader.uniforms.uPhaseScale = { value: phaseScale };
+        shader.uniforms.uSwayScale = { value: swayScale };
+        material.userData.shader = shader;
+        shader.vertexShader = shader.vertexShader
+          .replace(
+            "#include <common>",
+            `#include <common>
+uniform float uTime;
+uniform float uSwish;
+uniform float uPhaseScale;
+uniform float uSwayScale;`
+          )
+          .replace(
+            "#include <begin_vertex>",
+            `#include <begin_vertex>
+float tip = clamp(position.y, 0.0, 1.0);
+float tipWeight = tip * tip;
+vec3 instancePos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+float phase = dot(instancePos, vec3(3.73, 5.21, 4.17)) * uPhaseScale;
+float swayA = sin(uTime * 2.4 + phase);
+float swayB = cos(uTime * 1.7 + phase * 1.37);
+transformed.x += tipWeight * swayA * uSwish * uSwayScale;
+transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
+          );
+      };
+      material.customProgramCacheKey = () => `fur-swish-${phaseScale}-${swayScale}`;
+      material.needsUpdate = true;
+    }
+
+    const furUnderTint = new THREE.Color(0xdce1e7);
+    const furGuardTint = new THREE.Color(0xf8fbff);
+
+    enableSwish(underMat, 0.9, 0.045);
+    enableSwish(guardMat, 1.2, 0.085);
+    enableSwish(grassMat, 0.7, 0.018);
+
+    const underStrands = new THREE.InstancedMesh(underGeo, underMat, MAX_UNDER_STRANDS);
+    const guardStrands = new THREE.InstancedMesh(guardGeo, guardMat, MAX_GUARD_STRANDS);
+    const grassStrands = new THREE.InstancedMesh(grassGeo, grassMat, MAX_GRASS_STRANDS);
+    underStrands.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    guardStrands.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    grassStrands.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    underStrands.frustumCulled = false;
+    guardStrands.frustumCulled = false;
+    grassStrands.frustumCulled = false;
+    underStrands.renderOrder = 1;
+    grassStrands.renderOrder = 2;
+    guardStrands.renderOrder = 3;
+    underStrands.count = 0;
+    guardStrands.count = 0;
+    grassStrands.count = 0;
+    let underWriteIndex = 0;
+    let guardWriteIndex = 0;
+    let grassWriteIndex = 0;
+    const underCellIndices = new Map();
+    const guardCellIndices = new Map();
+    furGroup.add(grassStrands);
+    furGroup.add(underStrands);
+    furGroup.add(guardStrands);
+
+    const brushSizeEl = document.getElementById("brushSize");
+    const furLengthEl = document.getElementById("furLength");
+    const furDensityEl = document.getElementById("furDensity");
+    const swishEl = document.getElementById("swish");
+    const furColorEl = document.getElementById("furColor");
+    const toolModeEl = document.getElementById("toolMode");
+    const uiEl = document.getElementById("ui");
+    const menuToggleEl = document.getElementById("menuToggle");
+    const toolModeValueEl = document.getElementById("toolModeValue");
+    const brushSizeValueEl = document.getElementById("brushSizeValue");
+    const furLengthValueEl = document.getElementById("furLengthValue");
+    const furDensityValueEl = document.getElementById("furDensityValue");
+    const swishValueEl = document.getElementById("swishValue");
+    const furColorValueEl = document.getElementById("furColorValue");
+    const clearBtn = document.getElementById("clearBtn");
+    const clearFlowersBtn = document.getElementById("clearFlowersBtn");
+    const TOOL_LABELS = {
+      fur: "Fur",
+      seed: "Seed",
+      pluck: "Pluck"
+    };
+    const localPlayerId = `player-${Math.random().toString(36).slice(2, 10)}`;
+    const urlParams = new URLSearchParams(window.location.search);
+
+    function sanitizePlayerName(value) {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      return raw.replace(/\s+/g, " ").slice(0, 20);
+    }
+
+    function randomPlayerColorHex() {
+      const c = new THREE.Color().setHSL(Math.random(), 0.75, 0.6);
+      return `#${c.getHexString()}`;
+    }
+
+    const storedPlayerName = sanitizePlayerName(localStorage.getItem("fur_player_name"));
+    const queryPlayerName = sanitizePlayerName(urlParams.get("name"));
+    const localPlayerName = queryPlayerName || storedPlayerName || `Painter ${localPlayerId.slice(-4).toUpperCase()}`;
+    localStorage.setItem("fur_player_name", localPlayerName);
+
+    const storedPlayerColor = localStorage.getItem("fur_player_color");
+    const localPlayerColor = storedPlayerColor || randomPlayerColorHex();
+    if (!storedPlayerColor) localStorage.setItem("fur_player_color", localPlayerColor);
+
+    const remotePlayers = new Map();
+    const remoteCarriedRoseByPlayer = new Map();
+    const remoteCursorGroup = new THREE.Group();
+    scene.add(remoteCursorGroup);
+    const cursorRingGeo = new THREE.RingGeometry(0.017, 0.026, 22);
+    const cursorGlowGeo = new THREE.RingGeometry(0.027, 0.038, 22);
+    const cursorArrowGeo = new THREE.ConeGeometry(0.008, 0.024, 12, 1);
+    cursorArrowGeo.translate(0, 0.012, 0);
+    const roomCode = "main";
+    let multiplayerSendFn = null;
+    let multiplayerCloseFn = null;
+    let multiplayerHeartbeatId = null;
+    let multiplayerMode = "offline";
+    let hasInitialSnapshot = false;
+    let lastCursorBroadcastMs = 0;
+    const CURSOR_SEND_INTERVAL_MS = 42;
+
+    function syncLabels() {
+      toolModeValueEl.textContent = TOOL_LABELS[toolModeEl.value] || "Fur";
+      brushSizeValueEl.textContent = Number(brushSizeEl.value).toFixed(2);
+      furLengthValueEl.textContent = Number(furLengthEl.value).toFixed(2);
+      furDensityValueEl.textContent = String(Math.round(Number(furDensityEl.value)));
+      swishValueEl.textContent = Number(swishEl.value).toFixed(2);
+      furColorValueEl.textContent = furColorEl.value.toUpperCase();
+    }
+
+    function updateFurTintFromSlider() {
+      const base = new THREE.Color(furColorEl.value);
+      furGuardTint.copy(base);
+      furUnderTint.copy(base);
+    }
+
+    function setMenuCollapsed(collapsed) {
+      uiEl.classList.toggle("collapsed", collapsed);
+      menuToggleEl.textContent = collapsed ? "Open" : "Close";
+      menuToggleEl.setAttribute("aria-expanded", String(!collapsed));
+      localStorage.setItem("fur_menu_collapsed", collapsed ? "1" : "0");
+    }
+
+    furColorEl.value = "#dce1e7";
+    updateFurTintFromSlider();
+    setMenuCollapsed(localStorage.getItem("fur_menu_collapsed") !== "0");
+    syncLabels();
+    menuToggleEl.addEventListener("click", () => {
+      setMenuCollapsed(!uiEl.classList.contains("collapsed"));
+    });
+    toolModeEl.addEventListener("input", () => {
+      painting = false;
+      touchPainting = false;
+      lastPaintPosition = null;
+      touchLastPaintPosition = null;
+      controls.enabled = true;
+      syncLabels();
+      sendMultiplayer("hello", { tool: toolModeEl.value });
+    });
+    brushSizeEl.addEventListener("input", syncLabels);
+    furLengthEl.addEventListener("input", syncLabels);
+    furDensityEl.addEventListener("input", syncLabels);
+    swishEl.addEventListener("input", syncLabels);
+    furColorEl.addEventListener("input", () => {
+      updateFurTintFromSlider();
+      syncLabels();
+    });
+
+    const pendingGrassBursts = [];
+    let grassBurstCursor = 0;
+
+    function updateCountLabel() {}
+
+    function clearFur(broadcast = true) {
+      underStrands.count = 0;
+      guardStrands.count = 0;
+      grassStrands.count = 0;
+      underWriteIndex = 0;
+      guardWriteIndex = 0;
+      grassWriteIndex = 0;
+      underCellIndices.clear();
+      guardCellIndices.clear();
+      underStrands.instanceMatrix.needsUpdate = true;
+      guardStrands.instanceMatrix.needsUpdate = true;
+      grassStrands.instanceMatrix.needsUpdate = true;
+      if (underStrands.instanceColor) underStrands.instanceColor.needsUpdate = true;
+      if (guardStrands.instanceColor) guardStrands.instanceColor.needsUpdate = true;
+      if (grassStrands.instanceColor) grassStrands.instanceColor.needsUpdate = true;
+      pendingGrassBursts.length = 0;
+      grassBurstCursor = 0;
+      updateCountLabel();
+      if (broadcast) sendMultiplayer("clear_fur", {});
+    }
+
+    clearBtn.addEventListener("click", () => {
+      clearFur(true);
+    });
+
+    const flowersGroup = new THREE.Group();
+    const looseRosesGroup = new THREE.Group();
+    scene.add(flowersGroup);
+    scene.add(looseRosesGroup);
+
+    const flowers = [];
+    const flowersById = new Map();
+    const rosesById = new Map();
+    const rosePickColliders = [];
+    const flowerStemTargets = [];
+    let carriedRose = null;
+    let carryPreviewOnBall = false;
+    let localEntityCounter = 0;
+    let mouseActionLock = false;
+    let touchActionLock = false;
+    const FLOWER_GROW_SECONDS = 0.95;
+    const STEM_HEIGHT = 0.16;
+
+    const seedGeo = new THREE.SphereGeometry(0.009, 10, 8);
+    const stemGeo = new THREE.CylinderGeometry(0.0034, 0.0046, STEM_HEIGHT, 7, 1, false);
+    stemGeo.translate(0, STEM_HEIGHT * 0.5, 0);
+    const leafGeo = new THREE.PlaneGeometry(0.045, 0.024, 1, 1);
+    const petalOuterGeo = new THREE.CircleGeometry(0.033, 18);
+    const petalInnerGeo = new THREE.CircleGeometry(0.019, 16);
+    const roseCenterGeo = new THREE.SphereGeometry(0.011, 12, 10);
+    const roseColliderGeo = new THREE.SphereGeometry(0.048, 10, 8);
+    const invisiblePickMat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    });
+
+    const seedMat = new THREE.MeshStandardMaterial({
+      color: 0x7d5531,
+      roughness: 0.94,
+      metalness: 0.02
+    });
+    const stemMat = new THREE.MeshStandardMaterial({
+      color: 0x4a9a46,
+      roughness: 0.88,
+      metalness: 0.02
+    });
+    const leafMat = new THREE.MeshStandardMaterial({
+      color: 0x5ea84f,
+      roughness: 0.84,
+      metalness: 0.02,
+      side: THREE.DoubleSide
+    });
+    const rosePetalMatA = new THREE.MeshStandardMaterial({
+      color: 0xf08fc0,
+      roughness: 0.66,
+      metalness: 0.02,
+      side: THREE.DoubleSide
+    });
+    const rosePetalMatB = new THREE.MeshStandardMaterial({
+      color: 0xe977b1,
+      roughness: 0.64,
+      metalness: 0.02,
+      side: THREE.DoubleSide
+    });
+    const roseCenterMat = new THREE.MeshStandardMaterial({
+      color: 0xf4cb4f,
+      roughness: 0.72,
+      metalness: 0.03
+    });
+
+    function smoothstep01(x) {
+      const t = THREE.MathUtils.clamp(x, 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    function makeSeededRandom(seed) {
+      let state = (seed >>> 0) || 1;
+      return () => {
+        state += 0x6d2b79f5;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    let localActionCounter = 0;
+    function nextActionSeed() {
+      localActionCounter += 1;
+      return ((Date.now() >>> 0) ^ Math.imul(localActionCounter, 2654435761)) >>> 0;
+    }
+
+    function createEntityId(prefix) {
+      localEntityCounter += 1;
+      return `${localPlayerId}-${prefix}-${localEntityCounter}`;
+    }
+
+    function createRoseEntity(roseId = createEntityId("rose"), rand = Math.random) {
+      const existing = rosesById.get(roseId);
+      if (existing) return existing;
+      const rose = {
+        id: roseId,
+        group: new THREE.Group(),
+        collider: null,
+        ownerFlower: null,
+        pickable: true
+      };
+
+      for (let i = 0; i < 5; i++) {
+        const pivot = new THREE.Group();
+        pivot.rotation.y = (i / 5) * Math.PI * 2 + (rand() - 0.5) * 0.12;
+        pivot.rotation.x = THREE.MathUtils.degToRad(56 + rand() * 10);
+        const petal = new THREE.Mesh(petalOuterGeo, i % 2 === 0 ? rosePetalMatA : rosePetalMatB);
+        petal.position.z = 0.026 + rand() * 0.002;
+        petal.rotation.z = (rand() - 0.5) * 0.22;
+        pivot.add(petal);
+        rose.group.add(pivot);
+      }
+
+      for (let i = 0; i < 3; i++) {
+        const pivot = new THREE.Group();
+        pivot.rotation.y = (i / 3) * Math.PI * 2 + 0.45;
+        pivot.rotation.x = THREE.MathUtils.degToRad(43 + rand() * 8);
+        const petal = new THREE.Mesh(petalInnerGeo, rosePetalMatB);
+        petal.position.z = 0.015;
+        pivot.add(petal);
+        rose.group.add(pivot);
+      }
+
+      const center = new THREE.Mesh(roseCenterGeo, roseCenterMat);
+      center.position.y = 0.002;
+      center.scale.set(1, 0.62, 1);
+      rose.group.add(center);
+
+      const sepal = new THREE.Mesh(
+        new THREE.ConeGeometry(0.013, 0.018, 6, 1),
+        stemMat
+      );
+      sepal.position.y = -0.009;
+      sepal.rotation.x = Math.PI;
+      rose.group.add(sepal);
+
+      rose.collider = new THREE.Mesh(roseColliderGeo, invisiblePickMat);
+      rose.collider.position.y = 0.002;
+      rose.collider.userData.rose = rose;
+      rose.collider.userData.pickable = true;
+      rose.group.add(rose.collider);
+      rose.group.userData.rose = rose;
+      rosePickColliders.push(rose.collider);
+      rosesById.set(roseId, rose);
+
+      return rose;
+    }
+
+    function attachRoseToFlower(flower, rose, rotationY = Math.random() * Math.PI * 2) {
+      if (!flower || !rose || flower.rose) return false;
+      if (rose.ownerFlower) rose.ownerFlower.rose = null;
+      if (rose.group.parent) rose.group.parent.remove(rose.group);
+      flower.bloomMount.add(rose.group);
+      rose.group.position.set(0, 0, 0);
+      rose.group.quaternion.identity();
+      rose.group.rotation.y = rotationY;
+      rose.group.scale.setScalar(1);
+      rose.ownerFlower = flower;
+      flower.rose = rose;
+      const canPick = flower.growth > 0.55;
+      rose.pickable = canPick;
+      rose.collider.userData.pickable = canPick;
+      return true;
+    }
+
+    function createFlowerAt(point, normal, options = {}) {
+      const flowerId = options.flowerId || createEntityId("flower");
+      const existingFlower = flowersById.get(flowerId);
+      if (existingFlower) return existingFlower;
+      const rand = options.rand || makeSeededRandom(options.seed ?? nextActionSeed());
+      const anchor = new THREE.Group();
+      anchor.position.copy(point).addScaledVector(normal, 0.003);
+      anchor.quaternion.setFromUnitVectors(upAxis, normal);
+      flowersGroup.add(anchor);
+
+      const sway = new THREE.Group();
+      anchor.add(sway);
+
+      const stem = new THREE.Mesh(stemGeo, stemMat);
+      stem.scale.y = 0.02;
+      sway.add(stem);
+
+      const leafA = new THREE.Mesh(leafGeo, leafMat);
+      leafA.position.set(-0.018, STEM_HEIGHT * 0.35, 0);
+      leafA.rotation.set(-0.45, -0.5, -0.6);
+      leafA.scale.set(0.02, 0.02, 0.02);
+      sway.add(leafA);
+
+      const leafB = new THREE.Mesh(leafGeo, leafMat);
+      leafB.position.set(0.02, STEM_HEIGHT * 0.53, -0.003);
+      leafB.rotation.set(-0.35, 0.62, 0.55);
+      leafB.scale.set(0.02, 0.02, 0.02);
+      sway.add(leafB);
+
+      const seed = new THREE.Mesh(seedGeo, seedMat);
+      seed.position.y = 0.008;
+      sway.add(seed);
+
+      const bloomMount = new THREE.Group();
+      bloomMount.position.y = STEM_HEIGHT;
+      sway.add(bloomMount);
+
+      const flower = {
+        id: flowerId,
+        anchor,
+        sway,
+        stem,
+        leafA,
+        leafB,
+        seed,
+        bloomMount,
+        target: null,
+        rose: null,
+        plantedAt: options.plantedAt ?? clock.getElapsedTime(),
+        growth: 0,
+        phase: rand() * Math.PI * 2
+      };
+
+      const target = new THREE.Mesh(roseColliderGeo, invisiblePickMat);
+      target.position.y = STEM_HEIGHT;
+      target.userData.flower = flower;
+      sway.add(target);
+      flower.target = target;
+      flowerStemTargets.push(target);
+
+      const rose = createRoseEntity(options.roseId || createEntityId("rose"), rand);
+      attachRoseToFlower(flower, rose, rand() * Math.PI * 2);
+      rose.group.scale.setScalar(0.035);
+      rose.pickable = false;
+      rose.collider.userData.pickable = false;
+
+      flowers.push(flower);
+      flowersById.set(flowerId, flower);
+      return flower;
+    }
+
+    function clearFlowers(broadcast = true) {
+      if (carriedRose && carriedRose.group.parent) {
+        carriedRose.group.parent.remove(carriedRose.group);
+      }
+      carriedRose = null;
+      carryPreviewOnBall = false;
+      flowersGroup.clear();
+      looseRosesGroup.clear();
+      flowers.length = 0;
+      flowersById.clear();
+      rosesById.clear();
+      remoteCarriedRoseByPlayer.clear();
+      rosePickColliders.length = 0;
+      flowerStemTargets.length = 0;
+      if (broadcast) sendMultiplayer("clear_flowers", {});
+    }
+
+    clearFlowersBtn.addEventListener("click", () => {
+      clearFlowers(true);
+    });
+
+    function updateFlowers(nowSec) {
+      for (let i = 0; i < flowers.length; i++) {
+        const flower = flowers[i];
+        const age = nowSec - flower.plantedAt;
+        flower.growth = smoothstep01(age / FLOWER_GROW_SECONDS);
+        const growth = flower.growth;
+        const bloom = smoothstep01((growth - 0.42) / 0.58);
+        const leafGrowth = smoothstep01((growth - 0.1) / 0.9);
+
+        flower.stem.scale.y = Math.max(0.02, growth);
+        flower.seed.scale.setScalar(Math.max(0.02, 1.0 - growth * 1.25));
+        flower.seed.visible = growth < 0.98;
+        flower.leafA.scale.setScalar(Math.max(0.02, leafGrowth));
+        flower.leafB.scale.setScalar(Math.max(0.02, leafGrowth));
+
+        if (flower.rose && flower.rose.ownerFlower === flower) {
+          flower.rose.group.scale.setScalar(0.05 + bloom * 0.95);
+          const canPick = bloom > 0.52;
+          flower.rose.pickable = canPick;
+          flower.rose.collider.userData.pickable = canPick;
+        }
+
+        const sway = 0.065 * growth;
+        flower.sway.rotation.x = Math.sin(nowSec * 2.1 + flower.phase) * sway;
+        flower.sway.rotation.z = Math.cos(nowSec * 2.6 + flower.phase * 1.2) * sway * 0.8;
+      }
+    }
+
+    function getRoseHit(event) {
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const ballHit = raycaster.intersectObject(ball, false)[0];
+      const maxDistance = ballHit ? ballHit.distance + 0.12 : Number.POSITIVE_INFINITY;
+      const hits = raycaster.intersectObjects(rosePickColliders, false);
+      for (let i = 0; i < hits.length; i++) {
+        const hitData = hits[i];
+        const hit = hitData.object;
+        const rose = hit.userData.rose;
+        if (hitData.distance > maxDistance) continue;
+        if (!rose || !hit.parent) continue;
+        if (!hit.userData.pickable) continue;
+        return rose;
+      }
+      return null;
+    }
+
+    function getEmptyFlowerTargetHit(event) {
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const ballHit = raycaster.intersectObject(ball, false)[0];
+      const maxDistance = ballHit ? ballHit.distance + 0.12 : Number.POSITIVE_INFINITY;
+      const hits = raycaster.intersectObjects(flowerStemTargets, false);
+      for (let i = 0; i < hits.length; i++) {
+        const hitData = hits[i];
+        if (hitData.distance > maxDistance) continue;
+        const flower = hitData.object.userData.flower;
+        if (flower && !flower.rose && hitData.object.parent) {
+          return flower;
+        }
+      }
+      return null;
+    }
+
+    function setCarriedRoseInFront(nowSec) {
+      if (!carriedRose) return;
+      camera.getWorldDirection(carryDir);
+      carriedRose.group.position.copy(camera.position).addScaledVector(carryDir, 0.7);
+      carriedRose.group.position.y -= 0.06;
+      carriedRose.group.quaternion.copy(camera.quaternion);
+      carriedRose.group.rotateX(-0.4);
+      carriedRose.group.rotateZ(Math.sin(nowSec * 5.5) * 0.08);
+    }
+
+    function previewCarriedRoseAtPointer(event, nowSec) {
+      if (!carriedRose) return;
+      const hit = getBallHit(event);
+      if (!hit) {
+        carryPreviewOnBall = false;
+        setCarriedRoseInFront(nowSec);
+        return;
+      }
+      carryPreviewOnBall = true;
+      carryNormal.copy(hit.normal).normalize();
+      carriedRose.group.position.copy(hit.point).addScaledVector(carryNormal, 0.024);
+      carryQuat.setFromUnitVectors(upAxis, carryNormal);
+      carriedRose.group.quaternion.copy(carryQuat);
+      carriedRose.group.rotateY(nowSec * 1.8);
+    }
+
+    function pickRose(rose, nowSec) {
+      if (!rose || carriedRose === rose) return false;
+      if (rose.ownerFlower) rose.ownerFlower.rose = null;
+      rose.ownerFlower = null;
+      rose.pickable = false;
+      rose.collider.userData.pickable = false;
+      if (rose.group.parent) rose.group.parent.remove(rose.group);
+      scene.add(rose.group);
+      carriedRose = rose;
+      carryPreviewOnBall = false;
+      setCarriedRoseInFront(nowSec);
+      return true;
+    }
+
+    function placeRoseOnBall(rose, point, normal, rotationY = Math.random() * Math.PI * 2) {
+      if (!rose) return false;
+      if (rose.ownerFlower) rose.ownerFlower.rose = null;
+      rose.ownerFlower = null;
+      if (rose.group.parent) rose.group.parent.remove(rose.group);
+      looseRosesGroup.add(rose.group);
+      carryNormal.copy(normal).normalize();
+      rose.group.position.copy(point).addScaledVector(carryNormal, 0.024);
+      carryQuat.setFromUnitVectors(upAxis, carryNormal);
+      rose.group.quaternion.copy(carryQuat);
+      rose.group.rotateY(rotationY);
+      rose.group.scale.setScalar(1);
+      rose.pickable = true;
+      rose.collider.userData.pickable = true;
+      return true;
+    }
+
+    function handleSeedMode(event) {
+      const hit = getBallHit(event);
+      if (!hit) return false;
+      const flowerId = createEntityId("flower");
+      const roseId = createEntityId("rose");
+      const seed = nextActionSeed();
+      createFlowerAt(hit.point, hit.normal, { flowerId, roseId, seed });
+      sendMultiplayer("seed", {
+        flowerId,
+        roseId,
+        seed,
+        point: toVecPayload(hit.point),
+        normal: toVecPayload(hit.normal)
+      });
+      return true;
+    }
+
+    function handlePluckMode(event) {
+      const nowSec = clock.getElapsedTime();
+      if (carriedRose) {
+        const flower = getEmptyFlowerTargetHit(event);
+        if (flower) {
+          const roseId = carriedRose.id;
+          const rotation = (nextActionSeed() / 4294967296) * Math.PI * 2;
+          attachRoseToFlower(flower, carriedRose, rotation);
+          carriedRose = null;
+          carryPreviewOnBall = false;
+          sendMultiplayer("rose_place_flower", {
+            flowerId: flower.id,
+            roseId,
+            rotation
+          });
+          return true;
+        }
+        const hit = getBallHit(event);
+        if (!hit) return false;
+        const roseId = carriedRose.id;
+        const rotation = (nextActionSeed() / 4294967296) * Math.PI * 2;
+        placeRoseOnBall(carriedRose, hit.point, hit.normal, rotation);
+        carriedRose = null;
+        carryPreviewOnBall = false;
+        sendMultiplayer("rose_place_ball", {
+          roseId,
+          rotation,
+          point: toVecPayload(hit.point),
+          normal: toVecPayload(hit.normal)
+        });
+        return true;
+      }
+      const rose = getRoseHit(event);
+      if (!rose) return false;
+      const picked = pickRose(rose, nowSec);
+      if (picked) {
+        sendMultiplayer("rose_pick", { roseId: rose.id });
+      }
+      return picked;
+    }
+
+    function runPrimaryToolAction(event) {
+      const mode = toolModeEl.value;
+      if (mode === "seed") return handleSeedMode(event);
+      if (mode === "pluck") return handlePluckMode(event);
+      return false;
+    }
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let painting = false;
+    let lastPaintPosition = null;
+    let lastPaintMs = 0;
+    let touchPainting = false;
+    let touchLastPaintPosition = null;
+    let touchLastPaintMs = 0;
+    const activeTouchPointers = new Set();
+
+    const tempObj = new THREE.Object3D();
+    const hitPos = new THREE.Vector3();
+    const hitNormal = new THREE.Vector3();
+    const tangent = new THREE.Vector3();
+    const bitangent = new THREE.Vector3();
+    const upAxis = new THREE.Vector3(0, 1, 0);
+    const axisX = new THREE.Vector3(1, 0, 0);
+    const gravityDir = new THREE.Vector3(0, -0.2, 0);
+    const dir = new THREE.Vector3();
+    const radial = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    const localX = new THREE.Vector3();
+    const localY = new THREE.Vector3();
+    const localZ = new THREE.Vector3();
+    const strandDir = new THREE.Vector3();
+    const interpPoint = new THREE.Vector3();
+    const interpNormal = new THREE.Vector3();
+    const interpSurface = new THREE.Vector3();
+    const grassPoint = new THREE.Vector3();
+    const grassNormal = new THREE.Vector3();
+    const tmpColor = new THREE.Color();
+    const carryDir = new THREE.Vector3();
+    const carryNormal = new THREE.Vector3();
+    const carryQuat = new THREE.Quaternion();
+
+    function setSurfaceBasis(normal) {
+      const basisSeed = Math.abs(normal.y) > 0.92 ? axisX : upAxis;
+      tangent.copy(basisSeed).cross(normal).normalize();
+      bitangent.copy(normal).cross(tangent).normalize();
+    }
+
+    function setPointerFromEvent(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+
+    function getBallHit(event) {
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObject(ball, false)[0];
+      if (!hit) return null;
+      hitPos.copy(hit.point);
+      hitNormal.copy(hit.point).sub(ball.position).normalize();
+      setSurfaceBasis(hitNormal);
+      return { point: hitPos, normal: hitNormal };
+    }
+
+    function surfaceCellKey(normal) {
+      const nx = normal.x;
+      const ny = THREE.MathUtils.clamp(normal.y, -1, 1);
+      const nz = normal.z;
+      const u = ((Math.atan2(nz, nx) + Math.PI) / (Math.PI * 2));
+      const v = Math.acos(ny) / Math.PI;
+      const ix = Math.min(FUR_CELL_LON - 1, Math.max(0, Math.floor(u * FUR_CELL_LON)));
+      const iy = Math.min(FUR_CELL_LAT - 1, Math.max(0, Math.floor(v * FUR_CELL_LAT)));
+      return iy * FUR_CELL_LON + ix;
+    }
+
+    function toVecPayload(vec) {
+      return {
+        x: Math.round(vec.x * 10000) / 10000,
+        y: Math.round(vec.y * 10000) / 10000,
+        z: Math.round(vec.z * 10000) / 10000
+      };
+    }
+
+    function fromVecPayload(target, payload) {
+      target.set(
+        Number(payload?.x) || 0,
+        Number(payload?.y) || 0,
+        Number(payload?.z) || 0
+      );
+      return target;
+    }
+
+    function sendMultiplayer(type, payload) {
+      if (!multiplayerSendFn) return;
+      multiplayerSendFn({
+        sender: localPlayerId,
+        name: localPlayerName,
+        color: localPlayerColor,
+        room: roomCode,
+        type,
+        payload
+      });
+    }
+
+    function stopMultiplayerHeartbeat() {
+      if (multiplayerHeartbeatId !== null) {
+        clearInterval(multiplayerHeartbeatId);
+        multiplayerHeartbeatId = null;
+      }
+    }
+
+    function startMultiplayerHeartbeat() {
+      stopMultiplayerHeartbeat();
+      multiplayerHeartbeatId = setInterval(() => {
+        sendMultiplayer("hello", { tool: toolModeEl.value, mode: multiplayerMode, room: roomCode });
+      }, 2500);
+    }
+
+    function installMultiplayerTransport(sendFn, closeFn, mode) {
+      if (multiplayerCloseFn) {
+        multiplayerCloseFn();
+      }
+      stopMultiplayerHeartbeat();
+      multiplayerSendFn = sendFn;
+      multiplayerCloseFn = closeFn || null;
+      multiplayerMode = mode;
+      sendMultiplayer("hello", { tool: toolModeEl.value, mode: multiplayerMode, room: roomCode });
+      startMultiplayerHeartbeat();
+    }
+
+    function makePlayerLabelTexture(name, colorHex, isPainting) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 320;
+      canvas.height = 88;
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width;
+      const h = canvas.height;
+
+      function roundedRect(x, y, width, height, radius) {
+        const r = Math.min(radius, width * 0.5, height * 0.5);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + width, y, x + width, y + height, r);
+        ctx.arcTo(x + width, y + height, x, y + height, r);
+        ctx.arcTo(x, y + height, x, y, r);
+        ctx.arcTo(x, y, x + width, y, r);
+        ctx.closePath();
+      }
+
+      ctx.clearRect(0, 0, w, h);
+      roundedRect(10, 10, w - 20, h - 20, 20);
+      ctx.fillStyle = isPainting ? "rgba(24, 35, 52, 0.90)" : "rgba(20, 26, 38, 0.72)";
+      ctx.fill();
+
+      ctx.fillStyle = colorHex || "#7fd9ff";
+      ctx.fillRect(18, 20, 12, h - 40);
+
+      ctx.font = "600 26px Trebuchet MS, Segoe UI, sans-serif";
+      ctx.fillStyle = "#f3f7ff";
+      ctx.textBaseline = "middle";
+      ctx.fillText(name, 40, 44);
+
+      if (isPainting) {
+        ctx.font = "700 16px Trebuchet MS, Segoe UI, sans-serif";
+        ctx.fillStyle = "#ffd95f";
+        ctx.textAlign = "right";
+        ctx.fillText("PAINTING", w - 24, 44);
+        ctx.textAlign = "left";
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      return texture;
+    }
+
+    function disposePlayerLabelTexture(player) {
+      if (!player || !player.label || !player.label.material || !player.label.material.map) return;
+      player.label.material.map.dispose();
+      player.label.material.map = null;
+    }
+
+    function refreshPlayerLabel(player, isPainting) {
+      if (!player) return;
+      if (player.labelName === player.name && player.labelPainting === isPainting) return;
+      disposePlayerLabelTexture(player);
+      player.label.material.map = makePlayerLabelTexture(player.name, player.colorHex, isPainting);
+      player.label.material.needsUpdate = true;
+      player.labelName = player.name;
+      player.labelPainting = isPainting;
+    }
+
+    function normalizeRemotePlayerName(name, playerId) {
+      const sanitized = sanitizePlayerName(name);
+      if (sanitized) return sanitized;
+      return `Painter ${String(playerId).slice(-4).toUpperCase()}`;
+    }
+
+    function ensureRemotePlayer(playerId, colorHex, name) {
+      let player = remotePlayers.get(playerId);
+      if (player) {
+        player.name = normalizeRemotePlayerName(name || player.name, playerId);
+        if (colorHex && player.colorHex !== colorHex) {
+          player.colorHex = colorHex;
+          player.ring.material.color.set(colorHex);
+          player.glow.material.color.set(colorHex);
+          player.arrow.material.color.set(colorHex);
+        }
+        return player;
+      }
+
+      const ring = new THREE.Mesh(
+        cursorRingGeo,
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(colorHex || 0x7fd9ff),
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false
+        })
+      );
+      ring.visible = false;
+      ring.renderOrder = 9;
+      remoteCursorGroup.add(ring);
+
+      const glow = new THREE.Mesh(
+        cursorGlowGeo,
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(colorHex || 0x7fd9ff),
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false
+        })
+      );
+      glow.visible = false;
+      glow.renderOrder = 8;
+      remoteCursorGroup.add(glow);
+
+      const arrow = new THREE.Mesh(
+        cursorArrowGeo,
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(colorHex || 0x7fd9ff),
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false
+        })
+      );
+      arrow.visible = false;
+      arrow.renderOrder = 10;
+      remoteCursorGroup.add(arrow);
+
+      const label = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          transparent: true,
+          depthWrite: false
+        })
+      );
+      label.visible = false;
+      label.scale.set(0.22, 0.06, 1);
+      label.renderOrder = 11;
+      remoteCursorGroup.add(label);
+
+      player = {
+        id: playerId,
+        name: normalizeRemotePlayerName(name, playerId),
+        colorHex: colorHex || "#7fd9ff",
+        ring,
+        glow,
+        arrow,
+        label,
+        labelName: "",
+        labelPainting: false,
+        point: new THREE.Vector3(),
+        normal: new THREE.Vector3(0, 1, 0),
+        hasPoint: false,
+        paintUntilMs: 0,
+        lastSeenMs: performance.now(),
+        phase: Math.random() * Math.PI * 2
+      };
+      refreshPlayerLabel(player, false);
+      remotePlayers.set(playerId, player);
+      return player;
+    }
+
+    function removeRemotePlayer(playerId) {
+      const player = remotePlayers.get(playerId);
+      if (player && player.ring.parent) {
+        player.ring.parent.remove(player.ring);
+      }
+      if (player && player.glow.parent) {
+        player.glow.parent.remove(player.glow);
+      }
+      if (player && player.arrow.parent) {
+        player.arrow.parent.remove(player.arrow);
+      }
+      if (player && player.label.parent) {
+        player.label.parent.remove(player.label);
+      }
+      disposePlayerLabelTexture(player);
+      remotePlayers.delete(playerId);
+      remoteCarriedRoseByPlayer.delete(playerId);
+    }
+
+    function updateRemoteCursor(playerId, payload, colorHex, name) {
+      if (!payload?.point || !payload?.normal) return;
+      const player = ensureRemotePlayer(playerId, colorHex, name);
+      fromVecPayload(player.point, payload.point);
+      fromVecPayload(player.normal, payload.normal).normalize();
+      player.hasPoint = true;
+      player.lastSeenMs = performance.now();
+    }
+
+    function broadcastCursorFromEvent(event, force = false) {
+      if (!multiplayerSendFn) return;
+      const nowMs = performance.now();
+      if (!force && nowMs - lastCursorBroadcastMs < CURSOR_SEND_INTERVAL_MS) return;
+      const hit = getBallHit(event);
+      if (!hit) return;
+      lastCursorBroadcastMs = nowMs;
+      sendMultiplayer("cursor", {
+        tool: toolModeEl.value,
+        point: toVecPayload(hit.point),
+        normal: toVecPayload(hit.normal)
+      });
+    }
+
+    function broadcastPaintStamp(point, normal, force, seed) {
+      if (!multiplayerSendFn) return;
+      sendMultiplayer("paint", {
+        force,
+        seed,
+        brushSize: Number(brushSizeEl.value),
+        furLength: Number(furLengthEl.value),
+        furDensity: Number(furDensityEl.value),
+        point: toVecPayload(point),
+        normal: toVecPayload(normal)
+      });
+      sendMultiplayer("cursor", {
+        tool: "fur",
+        point: toVecPayload(point),
+        normal: toVecPayload(normal)
+      });
+    }
+
+    const remotePoint = new THREE.Vector3();
+    const remoteNormal = new THREE.Vector3();
+
+    function handleMultiplayerMessage(message, allowSelf = false, replay = false) {
+      if (!message) return;
+      if (message.type === "snapshot") {
+        if (hasInitialSnapshot) return;
+        hasInitialSnapshot = true;
+        clearFur(false);
+        clearFlowers(false);
+        const replayOps = Array.isArray(message.payload?.ops) ? message.payload.ops : [];
+        for (let i = 0; i < replayOps.length; i++) {
+          handleMultiplayerMessage(replayOps[i], true, true);
+        }
+        return;
+      }
+      if (!allowSelf && message.sender === localPlayerId) return;
+      if (message.room && message.room !== roomCode) return;
+      const payload = message.payload || {};
+      const senderId = message.sender;
+
+      if (message.type === "bye") {
+        if (replay) return;
+        removeRemotePlayer(senderId);
+        return;
+      }
+
+      if (message.type === "hello" || message.type === "cursor") {
+        if (replay) return;
+        const remote = ensureRemotePlayer(senderId, message.color, message.name);
+        remote.lastSeenMs = performance.now();
+        updateRemoteCursor(senderId, payload, message.color, message.name);
+        return;
+      }
+
+      if (message.type === "paint") {
+        if (!payload.point || !payload.normal) return;
+        if (!replay) {
+          const remote = ensureRemotePlayer(senderId, message.color, message.name);
+          remote.lastSeenMs = performance.now();
+          remote.paintUntilMs = Math.max(remote.paintUntilMs, performance.now() + 280);
+        }
+        fromVecPayload(remotePoint, payload.point);
+        fromVecPayload(remoteNormal, payload.normal).normalize();
+        paintAt(
+          remotePoint,
+          remoteNormal,
+          Number(payload.force) || 0.5,
+          Number(payload.seed) || 1,
+          payload
+        );
+        return;
+      }
+
+      if (message.type === "seed") {
+        if (!payload.point || !payload.normal) return;
+        fromVecPayload(remotePoint, payload.point);
+        fromVecPayload(remoteNormal, payload.normal).normalize();
+        createFlowerAt(remotePoint, remoteNormal, {
+          flowerId: payload.flowerId,
+          roseId: payload.roseId,
+          seed: Number(payload.seed) || 1
+        });
+        return;
+      }
+
+      if (message.type === "rose_pick") {
+        const rose = rosesById.get(payload.roseId);
+        if (!rose) return;
+        if (rose.ownerFlower) rose.ownerFlower.rose = null;
+        rose.ownerFlower = null;
+        if (rose.group.parent) rose.group.parent.remove(rose.group);
+        scene.add(rose.group);
+        rose.pickable = false;
+        rose.collider.userData.pickable = false;
+        if (carriedRose === rose) {
+          carriedRose = null;
+          carryPreviewOnBall = false;
+        }
+        remoteCarriedRoseByPlayer.set(senderId, rose);
+        return;
+      }
+
+      if (message.type === "rose_place_ball") {
+        const rose = remoteCarriedRoseByPlayer.get(senderId) || rosesById.get(payload.roseId);
+        if (!rose || !payload.point || !payload.normal) return;
+        fromVecPayload(remotePoint, payload.point);
+        fromVecPayload(remoteNormal, payload.normal).normalize();
+        placeRoseOnBall(rose, remotePoint, remoteNormal, Number(payload.rotation) || 0);
+        if (carriedRose === rose) {
+          carriedRose = null;
+          carryPreviewOnBall = false;
+        }
+        remoteCarriedRoseByPlayer.delete(senderId);
+        return;
+      }
+
+      if (message.type === "rose_place_flower") {
+        const rose = remoteCarriedRoseByPlayer.get(senderId) || rosesById.get(payload.roseId);
+        const flower = flowersById.get(payload.flowerId);
+        if (!rose || !flower || flower.rose) return;
+        attachRoseToFlower(flower, rose, Number(payload.rotation) || 0);
+        remoteCarriedRoseByPlayer.delete(senderId);
+        if (carriedRose === rose) {
+          carriedRose = null;
+          carryPreviewOnBall = false;
+        }
+        return;
+      }
+
+      if (message.type === "clear_fur") {
+        clearFur(false);
+        return;
+      }
+
+      if (message.type === "clear_flowers") {
+        clearFlowers(false);
+      }
+    }
+
+    function tryInitServerMultiplayer() {
+      if (typeof EventSource === "undefined") return Promise.resolve(false);
+      if (!window.location.protocol.startsWith("http")) return Promise.resolve(false);
+
+      const origin = window.location.origin;
+      const path = window.location.pathname || "/";
+      const basePath = path.endsWith(".html")
+        ? path.replace(/[^/]*$/, "")
+        : (path.endsWith("/") ? path : `${path}/`);
+      const candidates = [`${origin}${basePath}`, `${origin}/`];
+      const uniqueCandidates = [...new Set(candidates)];
+
+      function connectAtBase(base) {
+        const healthUrl = new URL("healthz", base).toString();
+        const eventsUrlObj = new URL("events", base);
+        eventsUrlObj.searchParams.set("room", roomCode);
+        eventsUrlObj.searchParams.set("player", localPlayerId);
+        const sendUrlObj = new URL("send", base);
+        sendUrlObj.searchParams.set("room", roomCode);
+        const eventsUrl = eventsUrlObj.toString();
+        const sendUrl = sendUrlObj.toString();
+
+        return fetch(healthUrl, { cache: "no-store" })
+          .then((res) => {
+            if (!res.ok) return false;
+
+            const source = new EventSource(eventsUrl);
+            source.onmessage = (event) => {
+              if (!event.data) return;
+              try {
+                const msg = JSON.parse(event.data);
+                handleMultiplayerMessage(msg);
+              } catch (err) {
+                // Ignore malformed events.
+              }
+            };
+
+            source.onerror = () => {
+              // Keep source open; browser will auto-retry SSE.
+            };
+
+            installMultiplayerTransport(
+              (msg) => {
+                fetch(sendUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(msg),
+                  keepalive: true
+                }).catch(() => {});
+              },
+              () => source.close(),
+              "server"
+            );
+            return true;
+          })
+          .catch(() => false);
+      }
+
+      return uniqueCandidates.reduce(
+        (chain, base) => chain.then((connected) => connected ? true : connectAtBase(base)),
+        Promise.resolve(false)
+      );
+    }
+
+    function tryInitBroadcastMultiplayer() {
+      if (typeof BroadcastChannel === "undefined") return false;
+      const channel = new BroadcastChannel("possumpaint-multiplayer-v1");
+      channel.addEventListener("message", (event) => {
+        handleMultiplayerMessage(event.data);
+      });
+      installMultiplayerTransport(
+        (msg) => channel.postMessage(msg),
+        () => channel.close(),
+        "broadcast"
+      );
+      return true;
+    }
+
+    function shutdownMultiplayer() {
+      sendMultiplayer("bye", {});
+      stopMultiplayerHeartbeat();
+      if (multiplayerCloseFn) {
+        multiplayerCloseFn();
+        multiplayerCloseFn = null;
+      }
+      multiplayerSendFn = null;
+      multiplayerMode = "offline";
+    }
+
+    function updateRemotePlayers(nowSec) {
+      const nowMs = performance.now();
+      for (const [playerId, player] of remotePlayers) {
+        if (nowMs - player.lastSeenMs > 9000) {
+          removeRemotePlayer(playerId);
+          continue;
+        }
+
+        if (!player.hasPoint) {
+          player.ring.visible = false;
+          player.glow.visible = false;
+          player.arrow.visible = false;
+          player.label.visible = false;
+          continue;
+        }
+
+        const isPainting = player.paintUntilMs > nowMs;
+        refreshPlayerLabel(player, isPainting);
+        player.ring.visible = true;
+        player.glow.visible = isPainting;
+        player.arrow.visible = isPainting;
+        player.label.visible = true;
+        player.ring.position.copy(player.point).addScaledVector(player.normal, 0.014);
+        carryQuat.setFromUnitVectors(upAxis, player.normal);
+        player.ring.quaternion.copy(carryQuat);
+        const basePulse = 1 + Math.sin(nowSec * 6 + player.phase) * 0.18;
+        const paintPulse = 1 + Math.sin(nowSec * 14 + player.phase * 0.77) * 0.26;
+        const ringScale = isPainting ? basePulse * 1.2 : basePulse;
+        player.ring.scale.setScalar(ringScale);
+        player.ring.material.opacity = isPainting ? 1.0 : 0.82;
+
+        player.glow.position.copy(player.point).addScaledVector(player.normal, 0.016);
+        player.glow.quaternion.copy(carryQuat);
+        player.glow.scale.setScalar(isPainting ? paintPulse * 1.08 : 1.0);
+        player.glow.material.opacity = isPainting ? 0.58 : 0.0;
+
+        player.arrow.position.copy(player.point).addScaledVector(player.normal, 0.044);
+        player.arrow.quaternion.copy(carryQuat);
+        player.arrow.rotateY(nowSec * 2.4 + player.phase);
+        player.arrow.material.opacity = isPainting ? 0.9 : 0.0;
+
+        player.label.position.copy(player.point).addScaledVector(player.normal, 0.098);
+        player.label.material.opacity = isPainting ? 0.98 : 0.86;
+
+        const heldRose = remoteCarriedRoseByPlayer.get(playerId);
+        if (!heldRose) continue;
+        if (heldRose.group.parent !== scene) {
+          if (heldRose.group.parent) heldRose.group.parent.remove(heldRose.group);
+          scene.add(heldRose.group);
+        }
+        heldRose.group.position.copy(player.point).addScaledVector(player.normal, 0.075);
+        heldRose.group.quaternion.copy(carryQuat);
+        heldRose.group.rotateY(nowSec * 1.8);
+      }
+    }
+
+    function initMultiplayer() {
+      tryInitServerMultiplayer().then((connected) => {
+        if (connected) return;
+        const isLocalhost =
+          window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1" ||
+          window.location.hostname === "::1";
+        if (isLocalhost) {
+          tryInitBroadcastMultiplayer();
+        } else {
+          console.warn("Multiplayer server connection failed; running without server sync.");
+        }
+      });
+      window.addEventListener("beforeunload", shutdownMultiplayer);
+    }
+
+    function queueGrassBurst(point, normal, brushSize, baseLength, density, seed) {
+      // Bound queue growth so long strokes do not spike memory/CPU.
+      if (pendingGrassBursts.length - grassBurstCursor > 1400) return;
+      grassPoint.copy(point);
+      grassNormal.copy(normal);
+      pendingGrassBursts.push({
+        due: clock.getElapsedTime() + GRASS_DELAY_SECONDS,
+        point: grassPoint.clone(),
+        normal: grassNormal.clone(),
+        brushSize,
+        baseLength,
+        density,
+        seed: (seed >>> 0) || 1
+      });
+    }
+
+    function paintGrassBurst(burst) {
+      setSurfaceBasis(burst.normal);
+      const grassDensity = Math.max(10, Math.min(120, Math.round(burst.density * 0.45)));
+      const rand = makeSeededRandom(burst.seed || 1);
+
+      for (let i = 0; i < grassDensity; i++) {
+        const r = burst.brushSize * 0.85 * Math.sqrt(rand());
+        const a = rand() * Math.PI * 2;
+        const ox = Math.cos(a) * r;
+        const oy = Math.sin(a) * r;
+        const x = burst.point.x + tangent.x * ox + bitangent.x * oy;
+        const y = burst.point.y + tangent.y * ox + bitangent.y * oy;
+        const z = burst.point.z + tangent.z * ox + bitangent.z * oy;
+        p.set(x, y, z);
+        radial.copy(p).sub(ball.position);
+        if (radial.lengthSq() < 0.0001) continue;
+        radial.normalize();
+        p.copy(ball.position).addScaledVector(radial, ballRadius + 0.0028);
+
+        const len = burst.baseLength * (0.14 + rand() * 0.08);
+        const layAngle = rand() * Math.PI * 2;
+        const nx = Math.cos(layAngle) * (0.08 + rand() * 0.12);
+        const ny = Math.sin(layAngle) * (0.08 + rand() * 0.12);
+        const nz = 0.94 + rand() * 0.14;
+        dir.set(nx, ny, nz).normalize();
+
+        localX.copy(tangent).multiplyScalar(dir.x);
+        localY.copy(bitangent).multiplyScalar(dir.y);
+        localZ.copy(burst.normal).multiplyScalar(dir.z);
+        strandDir.copy(localX).add(localY).add(localZ).addScaledVector(gravityDir, 0.08).normalize();
+
+        tempObj.position.copy(p);
+        tempObj.quaternion.setFromUnitVectors(upAxis, strandDir);
+        const width = 0.18 + rand() * 0.1;
+        tempObj.scale.set(width, len, width * 0.72);
+        tempObj.updateMatrix();
+
+        const writeIndex = grassWriteIndex;
+        grassStrands.setMatrixAt(writeIndex, tempObj.matrix);
+        const g = 0.64 + rand() * 0.16;
+        tmpColor.setRGB(g * 0.45, g, g * 0.42);
+        grassStrands.setColorAt(writeIndex, tmpColor);
+        if (grassStrands.count < MAX_GRASS_STRANDS) grassStrands.count++;
+        grassWriteIndex = (grassWriteIndex + 1) % MAX_GRASS_STRANDS;
+      }
+    }
+
+    function processGrassBursts(nowSec) {
+      let processed = 0;
+      while (
+        grassBurstCursor < pendingGrassBursts.length &&
+        pendingGrassBursts[grassBurstCursor].due <= nowSec &&
+        processed < MAX_GRASS_BURSTS_PER_FRAME
+      ) {
+        paintGrassBurst(pendingGrassBursts[grassBurstCursor]);
+        grassBurstCursor++;
+        processed++;
+      }
+
+      if (processed > 0) {
+        grassStrands.instanceMatrix.needsUpdate = true;
+        if (grassStrands.instanceColor) grassStrands.instanceColor.needsUpdate = true;
+        updateCountLabel();
+      }
+
+      if (grassBurstCursor > 64 && grassBurstCursor * 2 > pendingGrassBursts.length) {
+        pendingGrassBursts.splice(0, grassBurstCursor);
+        grassBurstCursor = 0;
+      }
+    }
+
+    function paintAt(point, normal, force = 1, seed = 0, settings = null) {
+      const brushSize = Number.isFinite(Number(settings?.brushSize))
+        ? Number(settings.brushSize)
+        : Number(brushSizeEl.value);
+      const baseLength = Number.isFinite(Number(settings?.furLength))
+        ? Number(settings.furLength)
+        : Number(furLengthEl.value);
+      const rawDensity = Number.isFinite(Number(settings?.furDensity))
+        ? Number(settings.furDensity)
+        : Number(furDensityEl.value);
+      const density = Math.round(rawDensity * force);
+      const rand = seed ? makeSeededRandom(seed) : Math.random;
+      setSurfaceBasis(normal);
+      const underDensity = Math.min(40, Math.max(1, Math.round(density * 0.28)));
+      const guardDensity = Math.min(48, Math.max(1, Math.round(density * 0.34)));
+      const seenUnderCells = new Set();
+      const seenGuardCells = new Set();
+      let addedAnyStrand = false;
+
+      for (let i = 0; i < underDensity; i++) {
+        const r = brushSize * Math.sqrt(rand());
+        const a = rand() * Math.PI * 2;
+        const ox = Math.cos(a) * r;
+        const oy = Math.sin(a) * r;
+        const x = point.x + tangent.x * ox + bitangent.x * oy;
+        const y = point.y + tangent.y * ox + bitangent.y * oy;
+        const z = point.z + tangent.z * ox + bitangent.z * oy;
+        p.set(x, y, z);
+        radial.copy(p).sub(ball.position);
+        if (radial.lengthSq() < 0.0001) continue;
+        radial.normalize();
+        const cellKey = surfaceCellKey(radial);
+        if (seenUnderCells.has(cellKey)) continue;
+        seenUnderCells.add(cellKey);
+        p.copy(ball.position).addScaledVector(radial, ballRadius + 0.0038);
+
+        const len = baseLength * (0.28 + rand() * 0.22);
+        const layAngle = rand() * Math.PI * 2;
+        const nx = Math.cos(layAngle) * (0.18 + rand() * 0.14);
+        const ny = Math.sin(layAngle) * (0.18 + rand() * 0.14);
+        const nz = 0.88 + rand() * 0.2;
+        dir.set(nx, ny, nz).normalize();
+
+        localX.copy(tangent).multiplyScalar(dir.x);
+        localY.copy(bitangent).multiplyScalar(dir.y);
+        localZ.copy(normal).multiplyScalar(dir.z);
+        strandDir.copy(localX).add(localY).add(localZ).addScaledVector(gravityDir, 0.08).normalize();
+
+        tempObj.position.copy(p);
+        tempObj.quaternion.setFromUnitVectors(upAxis, strandDir);
+        const width = 0.68 + rand() * 0.28;
+        tempObj.scale.set(width, len, width);
+        tempObj.updateMatrix();
+
+        let writeIndex = underCellIndices.get(cellKey);
+        if (writeIndex === undefined) {
+          if (underWriteIndex >= MAX_UNDER_STRANDS) continue;
+          writeIndex = underWriteIndex;
+          underCellIndices.set(cellKey, writeIndex);
+          underWriteIndex += 1;
+          underStrands.count = underWriteIndex;
+          addedAnyStrand = true;
+        }
+        underStrands.setMatrixAt(writeIndex, tempObj.matrix);
+        underStrands.setColorAt(writeIndex, furUnderTint);
+      }
+
+      for (let i = 0; i < guardDensity; i++) {
+        const r = brushSize * Math.sqrt(rand());
+        const a = rand() * Math.PI * 2;
+        const ox = Math.cos(a) * r;
+        const oy = Math.sin(a) * r;
+        const x = point.x + tangent.x * ox + bitangent.x * oy;
+        const y = point.y + tangent.y * ox + bitangent.y * oy;
+        const z = point.z + tangent.z * ox + bitangent.z * oy;
+        p.set(x, y, z);
+        radial.copy(p).sub(ball.position);
+        if (radial.lengthSq() < 0.0001) continue;
+        radial.normalize();
+        const cellKey = surfaceCellKey(radial);
+        if (seenGuardCells.has(cellKey)) continue;
+        seenGuardCells.add(cellKey);
+        p.copy(ball.position).addScaledVector(radial, ballRadius + 0.0066);
+
+        const len = baseLength * (0.7 + rand() * 0.58);
+        const layAngle = rand() * Math.PI * 2;
+        const nx = Math.cos(layAngle) * (0.14 + rand() * 0.22);
+        const ny = Math.sin(layAngle) * (0.14 + rand() * 0.22);
+        const nz = 0.96 + rand() * 0.25;
+        dir.set(nx, ny, nz).normalize();
+
+        localX.copy(tangent).multiplyScalar(dir.x);
+        localY.copy(bitangent).multiplyScalar(dir.y);
+        localZ.copy(normal).multiplyScalar(dir.z);
+        strandDir.copy(localX).add(localY).add(localZ).addScaledVector(gravityDir, 0.02).normalize();
+
+        tempObj.position.copy(p);
+        tempObj.quaternion.setFromUnitVectors(upAxis, strandDir);
+        const width = 0.72 + rand() * 0.34;
+        tempObj.scale.set(width, len, width);
+        tempObj.updateMatrix();
+
+        let writeIndex = guardCellIndices.get(cellKey);
+        if (writeIndex === undefined) {
+          if (guardWriteIndex >= MAX_GUARD_STRANDS) continue;
+          writeIndex = guardWriteIndex;
+          guardCellIndices.set(cellKey, writeIndex);
+          guardWriteIndex += 1;
+          guardStrands.count = guardWriteIndex;
+          addedAnyStrand = true;
+        }
+        guardStrands.setMatrixAt(writeIndex, tempObj.matrix);
+        guardStrands.setColorAt(writeIndex, furGuardTint);
+      }
+
+      underStrands.instanceMatrix.needsUpdate = true;
+      guardStrands.instanceMatrix.needsUpdate = true;
+      if (underStrands.instanceColor) underStrands.instanceColor.needsUpdate = true;
+      if (guardStrands.instanceColor) guardStrands.instanceColor.needsUpdate = true;
+      if (addedAnyStrand) {
+        queueGrassBurst(point, normal, brushSize, baseLength, density, (seed >>> 0) ^ 0x9e3779b9);
+      }
+      updateCountLabel();
+    }
+
+    function isUIInteractionTarget(event) {
+      return Boolean(event.target && uiEl.contains(event.target));
+    }
+
+    function onPointerDown(event) {
+      if (isUIInteractionTarget(event)) return;
+      const mode = toolModeEl.value;
+      broadcastCursorFromEvent(event, true);
+
+      if (event.pointerType === "touch") {
+        activeTouchPointers.add(event.pointerId);
+
+        if (mode !== "fur") {
+          if (activeTouchPointers.size === 1) {
+            const didAction = runPrimaryToolAction(event);
+            touchActionLock = didAction;
+            controls.enabled = !didAction;
+            if (didAction) event.preventDefault();
+          } else {
+            touchActionLock = false;
+            controls.enabled = true;
+          }
+          return;
+        }
+
+        if (activeTouchPointers.size === 1) {
+          const hit = getBallHit(event);
+          if (!hit) return;
+          touchPainting = true;
+          touchLastPaintMs = performance.now();
+          controls.enabled = false;
+          touchLastPaintPosition = hit.point.clone();
+          const seed = nextActionSeed();
+          paintAt(hit.point, hit.normal, 1, seed);
+          broadcastPaintStamp(hit.point, hit.normal, 1, seed);
+        } else {
+          touchPainting = false;
+          touchLastPaintPosition = null;
+          controls.enabled = true;
+        }
+        return;
+      }
+
+      if (event.button !== 0) return;
+
+      if (mode !== "fur") {
+        const didAction = runPrimaryToolAction(event);
+        mouseActionLock = didAction;
+        controls.enabled = !didAction;
+        if (didAction) event.preventDefault();
+        return;
+      }
+
+      const hit = getBallHit(event);
+      if (!hit) return;
+      painting = true;
+      lastPaintMs = performance.now();
+      controls.enabled = false;
+      lastPaintPosition = hit.point.clone();
+      const seed = nextActionSeed();
+      paintAt(hit.point, hit.normal, 1, seed);
+      broadcastPaintStamp(hit.point, hit.normal, 1, seed);
+    }
+
+    function onPointerMove(event) {
+      broadcastCursorFromEvent(event);
+      const mode = toolModeEl.value;
+      if (mode !== "fur") {
+        if (mode === "pluck" && carriedRose) {
+          previewCarriedRoseAtPointer(event, clock.getElapsedTime());
+        } else {
+          carryPreviewOnBall = false;
+        }
+        return;
+      }
+
+      if (event.pointerType === "touch") {
+        if (!touchPainting || activeTouchPointers.size !== 1) return;
+        const now = performance.now();
+        if (now - touchLastPaintMs < MIN_PAINT_INTERVAL_MS) return;
+        touchLastPaintMs = now;
+        const hit = getBallHit(event);
+        if (!hit) return;
+
+        if (!touchLastPaintPosition) {
+          touchLastPaintPosition = hit.point.clone();
+          const seed = nextActionSeed();
+          paintAt(hit.point, hit.normal, 1, seed);
+          broadcastPaintStamp(hit.point, hit.normal, 1, seed);
+          return;
+        }
+
+        const step = Number(brushSizeEl.value) * 0.62;
+        const distance = hit.point.distanceTo(touchLastPaintPosition);
+        const segments = Math.min(4, Math.max(1, Math.ceil(distance / Math.max(0.01, step))));
+
+        for (let i = 1; i <= segments; i++) {
+          const t = i / segments;
+          interpPoint.lerpVectors(touchLastPaintPosition, hit.point, t);
+          interpNormal.copy(interpPoint).sub(ball.position).normalize();
+          interpSurface.copy(ball.position).addScaledVector(interpNormal, ballRadius + 0.0015);
+          const seed = nextActionSeed();
+          paintAt(interpSurface, interpNormal, 0.5, seed);
+          broadcastPaintStamp(interpSurface, interpNormal, 0.5, seed);
+        }
+        touchLastPaintPosition.copy(hit.point);
+        return;
+      }
+
+      if (!painting) return;
+      const now = performance.now();
+      if (now - lastPaintMs < MIN_PAINT_INTERVAL_MS) return;
+      lastPaintMs = now;
+      const hit = getBallHit(event);
+      if (!hit) return;
+
+      if (!lastPaintPosition) {
+        lastPaintPosition = hit.point.clone();
+        const seed = nextActionSeed();
+        paintAt(hit.point, hit.normal, 1, seed);
+        broadcastPaintStamp(hit.point, hit.normal, 1, seed);
+        return;
+      }
+
+      const step = Number(brushSizeEl.value) * 0.62;
+      const distance = hit.point.distanceTo(lastPaintPosition);
+      const segments = Math.min(4, Math.max(1, Math.ceil(distance / Math.max(0.01, step))));
+
+      for (let i = 1; i <= segments; i++) {
+        const t = i / segments;
+        interpPoint.lerpVectors(lastPaintPosition, hit.point, t);
+        interpNormal.copy(interpPoint).sub(ball.position).normalize();
+        interpSurface.copy(ball.position).addScaledVector(interpNormal, ballRadius + 0.0015);
+        const seed = nextActionSeed();
+        paintAt(interpSurface, interpNormal, 0.5, seed);
+        broadcastPaintStamp(interpSurface, interpNormal, 0.5, seed);
+      }
+      lastPaintPosition.copy(hit.point);
+    }
+
+    function onPointerUp(event) {
+      const mode = toolModeEl.value;
+      if (event.pointerType === "touch") {
+        activeTouchPointers.delete(event.pointerId);
+
+        if (mode !== "fur") {
+          if (activeTouchPointers.size === 0) {
+            touchActionLock = false;
+            controls.enabled = true;
+            carryPreviewOnBall = false;
+          }
+          return;
+        }
+
+        if (activeTouchPointers.size === 0) {
+          touchPainting = false;
+          touchLastPaintPosition = null;
+          controls.enabled = true;
+        } else if (activeTouchPointers.size === 1) {
+          touchPainting = true;
+          touchLastPaintPosition = null;
+          touchLastPaintMs = performance.now();
+          controls.enabled = false;
+        }
+        return;
+      }
+
+      if (mode !== "fur") {
+        if (mouseActionLock) {
+          mouseActionLock = false;
+          controls.enabled = true;
+        }
+        carryPreviewOnBall = false;
+        return;
+      }
+
+      painting = false;
+      controls.enabled = true;
+      lastPaintPosition = null;
+    }
+
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.2));
+    });
+
+    const clock = new THREE.Clock();
+    initMultiplayer();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      const swish = Number(swishEl.value);
+      const underShader = underMat.userData.shader;
+      const guardShader = guardMat.userData.shader;
+      const grassShader = grassMat.userData.shader;
+      if (underShader) {
+        underShader.uniforms.uTime.value = t;
+        underShader.uniforms.uSwish.value = swish;
+      }
+      if (guardShader) {
+        guardShader.uniforms.uTime.value = t;
+        guardShader.uniforms.uSwish.value = swish;
+      }
+      if (grassShader) {
+        grassShader.uniforms.uTime.value = t;
+        grassShader.uniforms.uSwish.value = swish * 0.35;
+      }
+      processGrassBursts(t);
+      updateFlowers(t);
+      updateRemotePlayers(t);
+      if (carriedRose && !carryPreviewOnBall) {
+        setCarriedRoseInFront(t);
+      }
+      for (let i = 0; i < cloudGroup.children.length; i++) {
+        const cloud = cloudGroup.children[i];
+        cloud.position.x = cloud.userData.baseX + Math.sin(t * cloud.userData.drift + cloud.userData.phase) * 0.6;
+      }
+      key.position.x = 1.6 + Math.sin(t * 0.35) * 0.7;
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>

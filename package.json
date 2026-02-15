@@ -1,0 +1,13 @@
+{
+  "name": "possumpaint",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Persistent multiplayer fur paint globe",
+  "main": "multiplayer-server.js",
+  "scripts": {
+    "start": "node multiplayer-server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

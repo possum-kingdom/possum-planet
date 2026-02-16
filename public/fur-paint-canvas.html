@@ -155,6 +155,8 @@
     <select id="toolMode">
       <option value="fur">Fur Paint</option>
       <option value="seed">Plant Seed</option>
+      <option value="cheese">Plant Cheese Mushroom</option>
+      <option value="cloud">Swirl Clouds</option>
       <option value="pluck">Pluck / Place Rose</option>
     </select>
     <div class="row">
@@ -203,7 +205,7 @@
     scene.background = new THREE.Color(0x9fd4ff);
 
     const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 50);
-    camera.position.set(0, 0.35, 1.9);
+    camera.position.set(0, 1.05, 5.7);
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -214,8 +216,8 @@
     controls.enableDamping = true;
     controls.target.set(0, 0.05, 0);
     controls.enablePan = false;
-    controls.minDistance = 0.65;
-    controls.maxDistance = 3.8;
+    controls.minDistance = 1.95;
+    controls.maxDistance = 11.4;
     controls.touches.ONE = THREE.TOUCH.ROTATE;
     controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
     controls.update();
@@ -294,43 +296,278 @@
       return texture;
     }
 
+    function createFurPatternTexture() {
+      const size = 192;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#d9dce2";
+      ctx.fillRect(0, 0, size, size);
+
+      for (let i = 0; i < 2600; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const alpha = 0.03 + Math.random() * 0.08;
+        const shade = 210 + Math.floor(Math.random() * 34);
+        ctx.fillStyle = `rgba(${shade},${shade},${shade + 4},${alpha})`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 430; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const len = 3 + Math.random() * 8;
+        const angle = (Math.random() - 0.5) * Math.PI * 0.7;
+        const alpha = 0.05 + Math.random() * 0.11;
+        const light = 205 + Math.floor(Math.random() * 45);
+        ctx.strokeStyle = `rgba(${light},${light},${light + 3},${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+        ctx.stroke();
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(3.4, 2.4);
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    function createDirtMaps() {
+      const width = 1024;
+      const height = 512;
+      const albedoCanvas = document.createElement("canvas");
+      const roughCanvas = document.createElement("canvas");
+      const bumpCanvas = document.createElement("canvas");
+      albedoCanvas.width = width;
+      albedoCanvas.height = height;
+      roughCanvas.width = width;
+      roughCanvas.height = height;
+      bumpCanvas.width = width;
+      bumpCanvas.height = height;
+
+      const albedoCtx = albedoCanvas.getContext("2d");
+      const roughCtx = roughCanvas.getContext("2d");
+      const bumpCtx = bumpCanvas.getContext("2d");
+
+      function wrappedX(x, paintFn) {
+        paintFn(x);
+        paintFn(x - width);
+        paintFn(x + width);
+      }
+
+      function fillWrappedCircle(ctx, x, y, r, style) {
+        ctx.fillStyle = style;
+        wrappedX(x, (wx) => {
+          ctx.beginPath();
+          ctx.arc(wx, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      function strokeWrappedLine(ctx, x, y, len, angle, style, widthPx) {
+        ctx.strokeStyle = style;
+        ctx.lineWidth = widthPx;
+        wrappedX(x, (wx) => {
+          ctx.beginPath();
+          ctx.moveTo(wx, y);
+          ctx.lineTo(wx + Math.cos(angle) * len, y + Math.sin(angle) * len);
+          ctx.stroke();
+        });
+      }
+
+      const baseGrad = albedoCtx.createLinearGradient(0, 0, 0, height);
+      baseGrad.addColorStop(0, "#8e5f36");
+      baseGrad.addColorStop(0.42, "#7b4d2c");
+      baseGrad.addColorStop(1, "#694023");
+      albedoCtx.fillStyle = baseGrad;
+      albedoCtx.fillRect(0, 0, width, height);
+
+      roughCtx.fillStyle = "rgb(200,200,200)";
+      roughCtx.fillRect(0, 0, width, height);
+      bumpCtx.fillStyle = "rgb(126,126,126)";
+      bumpCtx.fillRect(0, 0, width, height);
+
+      // Broad soil variation layers.
+      for (let i = 0; i < 980; i++) {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const r = 8 + Math.random() * 42;
+        const tint = Math.random();
+        const rr = 84 + Math.floor(tint * 64);
+        const gg = 52 + Math.floor(tint * 44);
+        const bb = 29 + Math.floor(tint * 28);
+        const alpha = 0.05 + Math.random() * 0.13;
+        fillWrappedCircle(albedoCtx, x, y, r, `rgba(${rr},${gg},${bb},${alpha})`);
+
+        const roughV = 150 + Math.floor(Math.random() * 86);
+        fillWrappedCircle(roughCtx, x, y, r * (0.8 + Math.random() * 0.5), `rgba(${roughV},${roughV},${roughV},0.1)`);
+
+        const bumpV = 116 + Math.floor(Math.random() * 32);
+        fillWrappedCircle(bumpCtx, x, y, r * (0.5 + Math.random() * 0.55), `rgba(${bumpV},${bumpV},${bumpV},0.1)`);
+      }
+
+      // Pebble specks.
+      for (let i = 0; i < 14000; i++) {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const r = 0.45 + Math.random() * 1.7;
+        const pebble = 62 + Math.floor(Math.random() * 56);
+        const alpha = 0.08 + Math.random() * 0.24;
+        fillWrappedCircle(albedoCtx, x, y, r, `rgba(${pebble},${pebble - 8},${pebble - 14},${alpha})`);
+        fillWrappedCircle(roughCtx, x, y, r * 1.2, `rgba(230,230,230,0.06)`);
+        fillWrappedCircle(bumpCtx, x, y, r * 1.3, `rgba(156,156,156,0.09)`);
+      }
+
+      // Dry cracks and fibrous dirt lines.
+      albedoCtx.lineCap = "round";
+      roughCtx.lineCap = "round";
+      bumpCtx.lineCap = "round";
+      for (let i = 0; i < 520; i++) {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const len = 16 + Math.random() * 62;
+        const angle = (Math.random() - 0.5) * Math.PI * 1.4;
+        strokeWrappedLine(albedoCtx, x, y, len, angle, "rgba(47,29,16,0.18)", 0.55 + Math.random() * 1.4);
+        strokeWrappedLine(roughCtx, x, y, len * 0.95, angle, "rgba(120,120,120,0.16)", 0.45 + Math.random() * 1.2);
+        strokeWrappedLine(bumpCtx, x, y, len * 0.8, angle, "rgba(96,96,96,0.22)", 0.35 + Math.random() * 1.05);
+      }
+
+      const albedo = new THREE.CanvasTexture(albedoCanvas);
+      albedo.colorSpace = THREE.SRGBColorSpace;
+      albedo.wrapS = THREE.RepeatWrapping;
+      albedo.needsUpdate = true;
+
+      const roughness = new THREE.CanvasTexture(roughCanvas);
+      roughness.colorSpace = THREE.NoColorSpace;
+      roughness.wrapS = THREE.RepeatWrapping;
+      roughness.needsUpdate = true;
+
+      const bump = new THREE.CanvasTexture(bumpCanvas);
+      bump.colorSpace = THREE.NoColorSpace;
+      bump.wrapS = THREE.RepeatWrapping;
+      bump.needsUpdate = true;
+
+      return { albedo, roughness, bump };
+    }
+
     const cloudGroup = new THREE.Group();
     const cloudTexture = createCloudTexture();
-    for (let i = 0; i < 12; i++) {
+    const possumFurTexture = createFurPatternTexture();
+    const dirtMaps = createDirtMaps();
+    const cloudLayerRadius = 2.44;
+    const cloudPosTemp = new THREE.Vector3();
+    cloudGroup.position.set(0, 0.06, 0);
+    for (let i = 0; i < 20; i++) {
+      const opacity = 0.54 + Math.random() * 0.22;
       const sprite = new THREE.Sprite(
         new THREE.SpriteMaterial({
           map: cloudTexture,
           color: 0xffffff,
           transparent: true,
-          opacity: 0.45 + Math.random() * 0.22,
+          opacity,
           depthWrite: false
         })
       );
-      const ang = Math.random() * Math.PI * 2;
-      const radius = 5.8 + Math.random() * 4.2;
-      sprite.position.set(
-        Math.cos(ang) * radius,
-        1.1 + Math.random() * 2.1,
-        Math.sin(ang) * radius - 1.8
+      const azimuth = Math.random() * Math.PI * 2;
+      const y = -0.62 + Math.random() * 1.72;
+      const flat = Math.sqrt(Math.max(0, 1 - y * y));
+      const radius = cloudLayerRadius + (Math.random() - 0.5) * 0.16;
+      cloudPosTemp.set(
+        Math.cos(azimuth) * flat * radius,
+        y * radius,
+        Math.sin(azimuth) * flat * radius
       );
-      const s = 1.9 + Math.random() * 2.6;
-      sprite.scale.set(s * 1.9, s, 1);
-      sprite.material.rotation = (Math.random() - 0.5) * 0.6;
+      sprite.position.copy(cloudPosTemp);
+      const s = 0.3 + Math.random() * 0.36;
+      sprite.scale.set(s * 1.95, s, 1);
+      sprite.material.rotation = (Math.random() - 0.5) * 0.8;
+      sprite.renderOrder = 6;
       sprite.userData.baseX = sprite.position.x;
-      sprite.userData.drift = 0.04 + Math.random() * 0.05;
+      sprite.userData.baseY = sprite.position.y;
+      sprite.userData.baseZ = sprite.position.z;
+      sprite.userData.baseOpacity = opacity;
+      sprite.userData.baseScaleX = s * 1.95;
+      sprite.userData.baseScaleY = s;
+      sprite.userData.baseRadius = radius;
+      sprite.userData.driftX = 0.18 + Math.random() * 0.22;
+      sprite.userData.driftY = 0.22 + Math.random() * 0.2;
       sprite.userData.phase = Math.random() * Math.PI * 2;
       cloudGroup.add(sprite);
     }
     scene.add(cloudGroup);
 
-    const ballRadius = 0.58;
+    const CLOUD_TORNADO_SPEED = 6.4;
+    const CLOUD_TORNADO_TRIGGER_SECONDS = 0.62;
+    const CLOUD_SWIRL_DECAY_PER_SEC = 0.65;
+    const CLOUD_TORNADO_DURATION = 6.2;
+    const CLOUD_TORNADO_SPIN_BOOST = 1.7;
+    let cloudOrbitAngle = 0;
+    let cloudOrbitVelocity = 0;
+    let cloudSwirlMeter = 0;
+    let cloudSwirlPointerId = null;
+    let cloudSwirlLastAngle = 0;
+    let cloudSwirlLastMs = 0;
+    let tornadoUntilSec = 0;
+    let tornadoIntensity = 0;
+
+    const tornadoGroup = new THREE.Group();
+    tornadoGroup.visible = false;
+    scene.add(tornadoGroup);
+
+    const tornadoCoreMat = new THREE.MeshStandardMaterial({
+      color: 0xe8f3ff,
+      roughness: 0.9,
+      metalness: 0.02,
+      emissive: 0x4b6178,
+      emissiveIntensity: 0.42,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const tornadoCore = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.42, 0.06, 1.48, 28, 1, true),
+      tornadoCoreMat
+    );
+    tornadoCore.position.y = 0.98;
+    tornadoGroup.add(tornadoCore);
+
+    const tornadoBandMat = new THREE.MeshBasicMaterial({
+      color: 0xdde8f7,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    });
+    const tornadoBandGeo = new THREE.TorusGeometry(1, 0.12, 8, 26);
+    const tornadoBands = [];
+    for (let i = 0; i < 10; i++) {
+      const band = new THREE.Mesh(tornadoBandGeo, tornadoBandMat);
+      band.rotation.x = Math.PI * 0.5;
+      band.position.y = 0.28 + (i / 9) * 1.42;
+      band.userData.radius = 0.06 + (i / 9) * 0.34;
+      band.userData.phase = Math.random() * Math.PI * 2;
+      tornadoBands.push(band);
+      tornadoGroup.add(band);
+    }
+
+    const ballRadius = 1.74;
     const ballGeo = new THREE.SphereGeometry(ballRadius, 72, 48);
     const ballMat = new THREE.MeshStandardMaterial({
-      color: 0xf08b2d,
-      roughness: 0.74,
-      metalness: 0.02,
-      emissive: 0x2b1605,
-      emissiveIntensity: 0.08
+      color: 0xffffff,
+      map: dirtMaps.albedo,
+      roughnessMap: dirtMaps.roughness,
+      bumpMap: dirtMaps.bump,
+      roughness: 0.95,
+      bumpScale: 0.07,
+      metalness: 0.0,
+      emissive: 0x130a04,
+      emissiveIntensity: 0.03
     });
     const ball = new THREE.Mesh(ballGeo, ballMat);
     ball.position.set(0, 0.06, 0);
@@ -468,6 +705,8 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const TOOL_LABELS = {
       fur: "Fur",
       seed: "Seed",
+      cheese: "Cheese",
+      cloud: "Clouds",
       pluck: "Pluck"
     };
     const localPlayerId = `player-${Math.random().toString(36).slice(2, 10)}`;
@@ -544,6 +783,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       touchPainting = false;
       lastPaintPosition = null;
       touchLastPaintPosition = null;
+      endCloudSwirl();
       controls.enabled = true;
       syncLabels();
       sendMultiplayer("hello", { tool: toolModeEl.value });
@@ -554,6 +794,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     swishEl.addEventListener("input", syncLabels);
     furColorEl.addEventListener("input", () => {
       updateFurTintFromSlider();
+      syncPossumFurTint();
       syncLabels();
     });
 
@@ -589,12 +830,22 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     const flowersGroup = new THREE.Group();
     const looseRosesGroup = new THREE.Group();
+    const cheeseMushroomsGroup = new THREE.Group();
+    const cheesePoofGroup = new THREE.Group();
+    const possumNpcGroup = new THREE.Group();
     scene.add(flowersGroup);
     scene.add(looseRosesGroup);
+    scene.add(cheeseMushroomsGroup);
+    scene.add(cheesePoofGroup);
+    scene.add(possumNpcGroup);
 
     const flowers = [];
     const flowersById = new Map();
     const rosesById = new Map();
+    const cheeseMushrooms = [];
+    const cheeseMushroomsById = new Map();
+    const cheesePoofs = [];
+    const possumNpcs = [];
     const rosePickColliders = [];
     const flowerStemTargets = [];
     let carriedRose = null;
@@ -604,6 +855,19 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     let touchActionLock = false;
     const FLOWER_GROW_SECONDS = 0.95;
     const STEM_HEIGHT = 0.16;
+    const CHEESE_GROW_SECONDS = 0.42;
+    const CHEESE_LIFETIME_SECONDS = 5.2;
+    const CHEESE_POOF_SECONDS = 0.75;
+    const POSSUM_MAX_COUNT = 18;
+    const POSSUM_SURFACE_OFFSET = 0.07;
+    const POSSUM_IMMIGRATION_MIN_SECONDS = 4.5;
+    const POSSUM_IMMIGRATION_MAX_SECONDS = 9.5;
+    const POSSUM_IMMIGRATION_BASE_CHANCE = 0.32;
+    const POSSUM_IMMIGRATION_FLOWER_BONUS = 0.045;
+    const POSSUM_IMMIGRATION_DENSITY_PENALTY = 0.03;
+    const POSSUM_IMMIGRATION_BASE_BABY_CHANCE = 0.58;
+    const POSSUM_IMMIGRATION_FLOWER_BABY_BONUS = 0.05;
+    let nextPossumImmigrationSec = 2.8;
 
     const seedGeo = new THREE.SphereGeometry(0.009, 10, 8);
     const stemGeo = new THREE.CylinderGeometry(0.0034, 0.0046, STEM_HEIGHT, 7, 1, false);
@@ -613,6 +877,21 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const petalInnerGeo = new THREE.CircleGeometry(0.019, 16);
     const roseCenterGeo = new THREE.SphereGeometry(0.011, 12, 10);
     const roseColliderGeo = new THREE.SphereGeometry(0.048, 10, 8);
+    const cheeseStemGeo = new THREE.CylinderGeometry(0.011, 0.014, 0.058, 8, 1, false);
+    cheeseStemGeo.translate(0, 0.029, 0);
+    const cheeseCapGeo = new THREE.SphereGeometry(0.04, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.58);
+    const cheeseSpotGeo = new THREE.SphereGeometry(0.008, 10, 8);
+    const cheeseDustGeo = new THREE.SphereGeometry(0.01, 8, 6);
+    const possumBodyGeo = new THREE.SphereGeometry(0.058, 16, 12);
+    const possumHeadGeo = new THREE.SphereGeometry(0.03, 14, 10);
+    const possumEarGeo = new THREE.SphereGeometry(0.011, 10, 8);
+    const possumNoseGeo = new THREE.SphereGeometry(0.007, 10, 8);
+    const possumLegGeo = new THREE.CylinderGeometry(0.0075, 0.0058, 0.067, 7, 1, false);
+    possumLegGeo.translate(0, -0.0335, 0);
+    const possumTailGeo = new THREE.CylinderGeometry(0.0065, 0.0042, 0.168, 8, 1, false);
+    possumTailGeo.translate(0, -0.084, 0);
+    const possumFuzzGeo = new THREE.CylinderGeometry(0.0015, 0.00018, 0.03, 5, 1, false);
+    possumFuzzGeo.translate(0, 0.015, 0);
     const invisiblePickMat = new THREE.MeshBasicMaterial({
       transparent: true,
       opacity: 0,
@@ -652,6 +931,74 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       roughness: 0.72,
       metalness: 0.03
     });
+    const cheeseStemMat = new THREE.MeshStandardMaterial({
+      color: 0xfff1ac,
+      roughness: 0.92,
+      metalness: 0.02
+    });
+    const cheeseCapMat = new THREE.MeshStandardMaterial({
+      color: 0xffd93f,
+      roughness: 0.76,
+      metalness: 0.03
+    });
+    const cheeseSpotMat = new THREE.MeshStandardMaterial({
+      color: 0xfff28a,
+      roughness: 0.72,
+      metalness: 0.03
+    });
+    const possumFurMat = new THREE.MeshStandardMaterial({
+      color: 0xb9b8c4,
+      roughness: 0.9,
+      metalness: 0.02,
+      map: possumFurTexture,
+      bumpMap: possumFurTexture,
+      bumpScale: 0.007
+    });
+    const possumFuzzMat = new THREE.MeshStandardMaterial({
+      color: 0xc7c7d2,
+      roughness: 0.97,
+      metalness: 0.01,
+      map: possumFurTexture,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false
+    });
+    const possumBellyMat = new THREE.MeshStandardMaterial({
+      color: 0xf4eee0,
+      roughness: 0.92,
+      metalness: 0.01,
+      map: possumFurTexture,
+      bumpMap: possumFurTexture,
+      bumpScale: 0.004
+    });
+    const possumEarMat = new THREE.MeshStandardMaterial({
+      color: 0xd8bac8,
+      roughness: 0.86,
+      metalness: 0.01
+    });
+    const possumTailMat = new THREE.MeshStandardMaterial({
+      color: 0xd8a9b3,
+      roughness: 0.88,
+      metalness: 0.01
+    });
+    const possumEyeMat = new THREE.MeshStandardMaterial({
+      color: 0x17171c,
+      roughness: 0.35,
+      metalness: 0.05
+    });
+
+    const possumFurWhite = new THREE.Color(0xffffff);
+    const possumBellyCream = new THREE.Color(0xf7efe6);
+    function syncPossumFurTint() {
+      const base = new THREE.Color(furColorEl.value);
+      possumFurMat.color.copy(base).lerp(possumFurWhite, 0.24);
+      possumFurMat.emissive.copy(base).multiplyScalar(0.03);
+      possumFuzzMat.color.copy(base).lerp(possumFurWhite, 0.28);
+      possumFuzzMat.emissive.copy(base).multiplyScalar(0.04);
+      possumBellyMat.color.copy(base).lerp(possumBellyCream, 0.72);
+      possumBellyMat.emissive.copy(base).multiplyScalar(0.012);
+    }
+    syncPossumFurTint();
 
     function smoothstep01(x) {
       const t = THREE.MathUtils.clamp(x, 0, 1);
@@ -678,6 +1025,451 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     function createEntityId(prefix) {
       localEntityCounter += 1;
       return `${localPlayerId}-${prefix}-${localEntityCounter}`;
+    }
+
+    const possumWorldUp = new THREE.Vector3(0, 1, 0);
+    const possumTempTargetNormal = new THREE.Vector3();
+    const possumTempSeparation = new THREE.Vector3();
+    const possumTempOther = new THREE.Vector3();
+    const possumTempMove = new THREE.Vector3();
+    const possumTempForward = new THREE.Vector3();
+    const possumTempRight = new THREE.Vector3();
+    const possumTempBasis = new THREE.Matrix4();
+    const possumTempQuat = new THREE.Quaternion();
+    const possumTempSpawnNormal = new THREE.Vector3();
+
+    function randomPossumNormal(target, rand = Math.random) {
+      const z = rand() * 2 - 1;
+      const angle = rand() * Math.PI * 2;
+      const radial = Math.sqrt(Math.max(0, 1 - z * z));
+      target.set(Math.cos(angle) * radial, z * 0.76 + 0.26, Math.sin(angle) * radial).normalize();
+      if (target.y < -0.28) {
+        target.y = -0.28 + rand() * 0.24;
+        target.normalize();
+      }
+      return target;
+    }
+
+    function choosePossumTarget(possum, nowSec, forceRandom = false) {
+      const rand = possum.rand;
+      let choseAttractor = false;
+      let bestAlignment = -Infinity;
+
+      if (!forceRandom) {
+        const flowerAttractChance = flowers.length > 0 ? Math.min(0.92, 0.35 + flowers.length * 0.09) : 0;
+        if (flowerAttractChance > 0 && rand() < flowerAttractChance) {
+          for (let i = 0; i < flowers.length; i++) {
+            const flower = flowers[i];
+            possumTempTargetNormal.copy(flower.anchor.position).sub(ball.position).normalize();
+            const alignment = possum.normal.dot(possumTempTargetNormal);
+            if (alignment > bestAlignment) {
+              bestAlignment = alignment;
+              possum.targetNormal.copy(possumTempTargetNormal);
+              choseAttractor = true;
+            }
+          }
+        }
+      }
+
+      if (!forceRandom && !choseAttractor && cheeseMushrooms.length > 0 && rand() < 0.58) {
+        bestAlignment = -Infinity;
+        for (let i = 0; i < cheeseMushrooms.length; i++) {
+          const mushroom = cheeseMushrooms[i];
+          possumTempTargetNormal.copy(mushroom.anchor.position).sub(ball.position).normalize();
+          const alignment = possum.normal.dot(possumTempTargetNormal);
+          if (alignment > bestAlignment) {
+            bestAlignment = alignment;
+            possum.targetNormal.copy(possumTempTargetNormal);
+            choseAttractor = true;
+          }
+        }
+      }
+
+      if (!choseAttractor) {
+        randomPossumNormal(possum.targetNormal, rand);
+      }
+
+      const sniffChance = choseAttractor ? 0.12 : 0.3;
+      if (rand() < sniffChance) {
+        possum.state = "sniff";
+        possum.stateUntil = nowSec + 0.65 + rand() * 1.65;
+      } else {
+        possum.state = choseAttractor ? "forage" : "wander";
+        possum.stateUntil = nowSec + 1.7 + rand() * 3.8;
+      }
+    }
+
+    function createPossumFuzzCluster(parent, rand, options = {}) {
+      const count = options.count ?? 180;
+      const radius = options.radius || new THREE.Vector3(0.066, 0.046, 0.055);
+      const minY = options.minY ?? -0.45;
+      const shellVariance = options.shellVariance ?? 0.2;
+      const thicknessMin = options.thicknessMin ?? 0.65;
+      const thicknessMax = options.thicknessMax ?? 1.3;
+      const lengthMin = options.lengthMin ?? 0.55;
+      const lengthMax = options.lengthMax ?? 1.65;
+      const mesh = new THREE.InstancedMesh(possumFuzzGeo, possumFuzzMat, count);
+      mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 7;
+
+      const normal = new THREE.Vector3();
+      const helper = new THREE.Object3D();
+      let placed = 0;
+      let attempts = 0;
+      while (placed < count && attempts < count * 10) {
+        attempts++;
+        normal.set(rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1);
+        if (normal.lengthSq() < 1e-5) continue;
+        normal.normalize();
+        if (normal.y < minY) continue;
+        if (normal.z < -0.66 && rand() < 0.5) continue;
+        if (Math.abs(normal.x) < 0.08 && normal.y < -0.05 && rand() < 0.7) continue;
+
+        const shell = 1 + (rand() - 0.5) * shellVariance;
+        helper.position.set(
+          normal.x * radius.x * shell,
+          normal.y * radius.y * shell,
+          normal.z * radius.z * shell
+        );
+        helper.quaternion.setFromUnitVectors(possumWorldUp, normal);
+        const thickness = thicknessMin + rand() * (thicknessMax - thicknessMin);
+        const length = lengthMin + rand() * (lengthMax - lengthMin);
+        helper.scale.set(thickness, length, thickness);
+        helper.updateMatrix();
+        mesh.setMatrixAt(placed, helper.matrix);
+        placed++;
+      }
+      mesh.count = placed;
+      mesh.instanceMatrix.needsUpdate = true;
+      parent.add(mesh);
+      return mesh;
+    }
+
+    function createPossumNpc(possumId = createEntityId("opossum"), rand = Math.random, options = {}) {
+      const isBaby = Boolean(options.baby);
+      const root = new THREE.Group();
+      root.name = possumId;
+      possumNpcGroup.add(root);
+
+      const bodyPivot = new THREE.Group();
+      root.add(bodyPivot);
+
+      const body = new THREE.Mesh(possumBodyGeo, possumFurMat);
+      body.position.y = 0.11;
+      body.scale.set(0.92, 1.5, 0.75);
+      bodyPivot.add(body);
+
+      const belly = new THREE.Mesh(possumBodyGeo, possumBellyMat);
+      belly.scale.set(0.66, 0.9, 0.52);
+      belly.position.set(0, 0.1, 0.025);
+      bodyPivot.add(belly);
+
+      const headPivot = new THREE.Group();
+      headPivot.position.set(0, 0.22, 0.01);
+      bodyPivot.add(headPivot);
+
+      const head = new THREE.Mesh(possumHeadGeo, possumFurMat);
+      head.scale.set(1.08, 1.12, 0.98);
+      headPivot.add(head);
+
+      const bodyFuzz = createPossumFuzzCluster(body, rand, {
+        count: isBaby ? 130 : 190,
+        radius: new THREE.Vector3(0.045, 0.075, 0.04),
+        minY: -0.5,
+        shellVariance: 0.24,
+        thicknessMin: 0.66,
+        thicknessMax: 1.35,
+        lengthMin: 0.62,
+        lengthMax: 1.8
+      });
+      const headFuzz = createPossumFuzzCluster(head, rand, {
+        count: isBaby ? 78 : 110,
+        radius: new THREE.Vector3(0.033, 0.034, 0.03),
+        minY: -0.42,
+        shellVariance: 0.18,
+        thicknessMin: 0.62,
+        thicknessMax: 1.22,
+        lengthMin: 0.56,
+        lengthMax: 1.58
+      });
+
+      const nose = new THREE.Mesh(possumNoseGeo, possumEarMat);
+      nose.position.set(0, -0.004, 0.028);
+      headPivot.add(nose);
+
+      const eyeL = new THREE.Mesh(possumNoseGeo, possumEyeMat);
+      eyeL.scale.setScalar(0.65);
+      eyeL.position.set(-0.011, 0.005, 0.022);
+      headPivot.add(eyeL);
+
+      const eyeR = eyeL.clone();
+      eyeR.position.x = 0.011;
+      headPivot.add(eyeR);
+
+      const earL = new THREE.Mesh(possumEarGeo, possumEarMat);
+      earL.position.set(-0.017, 0.021, -0.004);
+      headPivot.add(earL);
+
+      const earR = earL.clone();
+      earR.position.x = 0.017;
+      headPivot.add(earR);
+
+      const tailPivot = new THREE.Group();
+      const tailBaseX = 1.84 + (rand() - 0.5) * 0.2;
+      tailPivot.position.set(0, 0.055, -0.04);
+      tailPivot.rotation.x = tailBaseX;
+      bodyPivot.add(tailPivot);
+
+      const tail = new THREE.Mesh(possumTailGeo, possumTailMat);
+      tail.scale.set(0.92, 0.95, 0.92);
+      tailPivot.add(tail);
+
+      const legs = [];
+      const legLayout = [
+        { x: -0.028, y: 0.055, z: 0.018, phase: 0, kind: "leg" },
+        { x: 0.028, y: 0.055, z: 0.018, phase: Math.PI, kind: "leg" },
+        { x: -0.05, y: 0.155, z: 0.012, phase: Math.PI, kind: "arm" },
+        { x: 0.05, y: 0.155, z: 0.012, phase: 0, kind: "arm" }
+      ];
+
+      for (let i = 0; i < legLayout.length; i++) {
+        const limbData = legLayout[i];
+        const limbPivot = new THREE.Group();
+        limbPivot.position.set(limbData.x, limbData.y, limbData.z);
+        limbPivot.userData.phase = limbData.phase;
+        limbPivot.userData.kind = limbData.kind;
+        const limbMesh = new THREE.Mesh(possumLegGeo, possumFurMat);
+        if (limbData.kind === "arm") {
+          limbMesh.scale.set(0.84, 0.84, 0.84);
+          limbPivot.rotation.z = limbData.x < 0 ? 0.2 : -0.2;
+        } else {
+          limbMesh.scale.set(1.02, 1.06, 1.02);
+          const foot = new THREE.Mesh(possumNoseGeo, possumEarMat);
+          foot.scale.set(0.95, 0.58, 1.25);
+          foot.position.set(0, -0.069, 0.004);
+          limbMesh.add(foot);
+        }
+        limbPivot.userData.baseZRot = limbPivot.rotation.z;
+        limbPivot.add(limbMesh);
+        bodyPivot.add(limbPivot);
+        legs.push(limbPivot);
+      }
+
+      const snoutFuzz = createPossumFuzzCluster(headPivot, rand, {
+        count: isBaby ? 34 : 52,
+        radius: new THREE.Vector3(0.016, 0.014, 0.02),
+        minY: -0.2,
+        shellVariance: 0.14,
+        thicknessMin: 0.52,
+        thicknessMax: 1.06,
+        lengthMin: 0.48,
+        lengthMax: 1.1
+      });
+      snoutFuzz.position.set(0, -0.001, 0.011);
+
+      const normal = options.spawnNormal
+        ? options.spawnNormal.clone().normalize()
+        : randomPossumNormal(new THREE.Vector3(), rand);
+      const targetNormal = randomPossumNormal(new THREE.Vector3(), rand);
+      const forward = targetNormal.clone().addScaledVector(normal, -targetNormal.dot(normal));
+      if (forward.lengthSq() < 1e-5) {
+        forward.set(1, 0, 0).addScaledVector(normal, -normal.x).normalize();
+      } else {
+        forward.normalize();
+      }
+
+      root.position.copy(ball.position).addScaledVector(normal, ballRadius + POSSUM_SURFACE_OFFSET);
+      root.scale.setScalar((isBaby ? 0.5 : 0.84) + rand() * (isBaby ? 0.08 : 0.08));
+      body.scale.x *= 0.92 + rand() * 0.16;
+      body.scale.z *= 0.9 + rand() * 0.12;
+
+      return {
+        id: possumId,
+        root,
+        bodyPivot,
+        headPivot,
+        tailPivot,
+        tailBaseX,
+        bodyFuzz,
+        headFuzz,
+        legs,
+        normal,
+        targetNormal,
+        forward,
+        isBaby,
+        state: "wander",
+        stateUntil: 0,
+        baseSpeed: (0.07 + rand() * 0.045) * (isBaby ? 1.2 : 1),
+        turnSpeed: 1.5 + rand() * 1.4,
+        moveBlend: 0,
+        gaitPhase: rand() * Math.PI * 2,
+        phase: rand() * Math.PI * 2,
+        rand
+      };
+    }
+
+    function scheduleNextPossumImmigration(nowSec, rand = Math.random) {
+      const span = POSSUM_IMMIGRATION_MAX_SECONDS - POSSUM_IMMIGRATION_MIN_SECONDS;
+      nextPossumImmigrationSec = nowSec + POSSUM_IMMIGRATION_MIN_SECONDS + rand() * Math.max(0.1, span);
+    }
+
+    function tryPossumImmigration(nowSec) {
+      if (nowSec < nextPossumImmigrationSec) return false;
+      if (possumNpcs.length >= POSSUM_MAX_COUNT) {
+        scheduleNextPossumImmigration(nowSec);
+        return false;
+      }
+
+      const rollSeed = nextActionSeed() ^ Math.imul(possumNpcs.length + 1, 1597334677);
+      const rand = makeSeededRandom(rollSeed);
+      const flowerCount = flowers.length;
+      const cappedFlowers = Math.min(12, flowerCount);
+      const spawnChance = THREE.MathUtils.clamp(
+        POSSUM_IMMIGRATION_BASE_CHANCE +
+          cappedFlowers * POSSUM_IMMIGRATION_FLOWER_BONUS -
+          possumNpcs.length * POSSUM_IMMIGRATION_DENSITY_PENALTY,
+        0.04,
+        0.9
+      );
+      const babyChance = THREE.MathUtils.clamp(
+        POSSUM_IMMIGRATION_BASE_BABY_CHANCE + cappedFlowers * POSSUM_IMMIGRATION_FLOWER_BABY_BONUS,
+        0.2,
+        0.96
+      );
+
+      const shouldSpawn = rand() <= spawnChance;
+      scheduleNextPossumImmigration(nowSec, rand);
+      if (!shouldSpawn) return false;
+
+      // Bias arrivals from the far side of camera view so they feel like they wandered in.
+      possumTempSpawnNormal.copy(camera.position).sub(ball.position).normalize().multiplyScalar(-1);
+      possumTempRight.crossVectors(possumTempSpawnNormal, possumWorldUp);
+      if (possumTempRight.lengthSq() < 1e-6) possumTempRight.set(1, 0, 0);
+      possumTempRight.normalize();
+      possumTempForward.crossVectors(possumTempRight, possumTempSpawnNormal).normalize();
+      possumTempSpawnNormal
+        .addScaledVector(possumTempRight, (rand() - 0.5) * 0.88)
+        .addScaledVector(possumTempForward, (rand() - 0.5) * 0.72);
+      possumTempSpawnNormal.y = THREE.MathUtils.clamp(possumTempSpawnNormal.y, -0.28, 0.9);
+      possumTempSpawnNormal.normalize();
+
+      const baby = rand() <= babyChance;
+      const npcRand = makeSeededRandom(rollSeed ^ 0x9e3779b9);
+      const possum = createPossumNpc(createEntityId("opossum"), npcRand, {
+        baby,
+        spawnNormal: possumTempSpawnNormal
+      });
+      choosePossumTarget(possum, nowSec, false);
+      possumNpcs.push(possum);
+      return true;
+    }
+
+    function updatePossumNpcs(nowSec, deltaSec) {
+      tryPossumImmigration(nowSec);
+      for (let i = 0; i < possumNpcs.length; i++) {
+        const possum = possumNpcs[i];
+        if (nowSec >= possum.stateUntil) {
+          choosePossumTarget(possum, nowSec);
+        }
+
+        const tornadoBoost = tornadoIntensity > 0.2 ? (1 + tornadoIntensity * 0.9) : 1;
+        let speed = possum.baseSpeed * tornadoBoost;
+        if (possum.state === "sniff" && tornadoIntensity < 0.6) {
+          speed = 0.004;
+        } else if (possum.state === "forage") {
+          speed *= 1.15;
+        }
+
+        possumTempMove.copy(possum.targetNormal)
+          .addScaledVector(possum.normal, -possum.normal.dot(possum.targetNormal));
+        if (possumTempMove.lengthSq() < 1e-5) {
+          randomPossumNormal(possum.targetNormal, possum.rand);
+          possumTempMove.copy(possum.targetNormal)
+            .addScaledVector(possum.normal, -possum.normal.dot(possum.targetNormal));
+        }
+        possumTempMove.normalize();
+
+        possumTempSeparation.set(0, 0, 0);
+        for (let j = 0; j < possumNpcs.length; j++) {
+          if (i === j) continue;
+          const other = possumNpcs[j];
+          possumTempOther.copy(possum.normal).sub(other.normal);
+          const distanceSq = possumTempOther.lengthSq();
+          if (distanceSq <= 1e-6 || distanceSq > 0.1) continue;
+          possumTempSeparation.addScaledVector(possumTempOther, (0.1 - distanceSq) * 5.8);
+        }
+        if (possumTempSeparation.lengthSq() > 1e-6) {
+          possumTempSeparation.addScaledVector(
+            possum.normal,
+            -possum.normal.dot(possumTempSeparation)
+          );
+          if (possumTempSeparation.lengthSq() > 1e-6) {
+            possumTempSeparation.normalize();
+            possumTempMove.lerp(possumTempSeparation, 0.34).normalize();
+          }
+        }
+
+        if (speed > 0.0001) {
+          const angularStep = speed * deltaSec / Math.max(0.1, ballRadius + POSSUM_SURFACE_OFFSET);
+          possum.normal.addScaledVector(possumTempMove, angularStep).normalize();
+          possum.forward.lerp(possumTempMove, 1 - Math.exp(-deltaSec * possum.turnSpeed));
+          if (possum.forward.lengthSq() > 1e-6) possum.forward.normalize();
+        }
+
+        if (possum.state !== "sniff" && possum.normal.dot(possum.targetNormal) > 0.992) {
+          choosePossumTarget(possum, nowSec);
+        }
+
+        const moveTarget = speed > 0.01 ? 1 : 0.16;
+        possum.moveBlend += (moveTarget - possum.moveBlend) * (1 - Math.exp(-deltaSec * 7));
+        possum.gaitPhase += deltaSec * (2.2 + speed * 34);
+
+        const legSwing = 0.78 * possum.moveBlend;
+        const armSwing = 0.54 * possum.moveBlend;
+        for (let legIndex = 0; legIndex < possum.legs.length; legIndex++) {
+          const limb = possum.legs[legIndex];
+          const stride = Math.sin(possum.gaitPhase + limb.userData.phase);
+          if (limb.userData.kind === "arm") {
+            limb.rotation.x = -0.12 - stride * armSwing;
+            limb.rotation.z = (limb.userData.baseZRot || 0) + Math.sin(possum.gaitPhase * 0.5 + limb.userData.phase) * 0.06;
+          } else {
+            limb.rotation.x = 0.05 + stride * legSwing;
+            limb.rotation.z = limb.userData.baseZRot || 0;
+          }
+        }
+
+        const sniffWeight = possum.state === "sniff" ? 1 : 0;
+        possum.headPivot.rotation.x =
+          0.03 +
+          Math.sin(nowSec * (3.8 + sniffWeight * 6.2) + possum.phase) * (0.05 + sniffWeight * 0.08);
+        possum.bodyPivot.rotation.x =
+          -0.06 +
+          Math.sin(nowSec * 3.3 + possum.phase * 0.8) * 0.045 * possum.moveBlend;
+        possum.bodyPivot.rotation.z = Math.sin(nowSec * 4.4 + possum.phase) * 0.032 * possum.moveBlend;
+        possum.tailPivot.rotation.x =
+          possum.tailBaseX +
+          Math.sin(nowSec * 5.5 + possum.phase * 1.2) * 0.14 -
+          possum.moveBlend * 0.08;
+        possum.tailPivot.rotation.y = Math.sin(nowSec * 3.8 + possum.phase) * 0.12 * possum.moveBlend;
+
+        possumTempRight.crossVectors(possum.normal, possum.forward);
+        if (possumTempRight.lengthSq() < 1e-6) {
+          possumTempRight.crossVectors(possum.normal, possumWorldUp);
+          if (possumTempRight.lengthSq() < 1e-6) possumTempRight.set(1, 0, 0);
+        }
+        possumTempRight.normalize();
+        possumTempForward.crossVectors(possumTempRight, possum.normal).normalize();
+        possum.forward.copy(possumTempForward);
+
+        possumTempBasis.makeBasis(possumTempRight, possum.normal, possumTempForward);
+        possumTempQuat.setFromRotationMatrix(possumTempBasis);
+        possum.root.quaternion.slerp(possumTempQuat, 1 - Math.exp(-deltaSec * possum.turnSpeed * 2.2));
+
+        const bob = Math.sin(possum.gaitPhase * 2) * 0.0075 * possum.moveBlend;
+        possum.root.position.copy(ball.position)
+          .addScaledVector(possum.normal, ballRadius + POSSUM_SURFACE_OFFSET + bob);
+      }
     }
 
     function createRoseEntity(roseId = createEntityId("rose"), rand = Math.random) {
@@ -825,6 +1617,121 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       return flower;
     }
 
+    function createCheeseMushroomAt(point, normal, options = {}) {
+      const mushroomId = options.mushroomId || createEntityId("cheese");
+      const existing = cheeseMushroomsById.get(mushroomId);
+      if (existing) return existing;
+      const rand = options.rand || makeSeededRandom(options.seed ?? nextActionSeed());
+
+      const anchor = new THREE.Group();
+      anchor.position.copy(point).addScaledVector(normal, 0.003);
+      anchor.quaternion.setFromUnitVectors(upAxis, normal);
+      cheeseMushroomsGroup.add(anchor);
+
+      const sway = new THREE.Group();
+      anchor.add(sway);
+
+      const stem = new THREE.Mesh(cheeseStemGeo, cheeseStemMat);
+      stem.scale.y = 0.02;
+      sway.add(stem);
+
+      const cap = new THREE.Mesh(cheeseCapGeo, cheeseCapMat);
+      cap.position.y = 0.055;
+      cap.scale.setScalar(0.02);
+      sway.add(cap);
+
+      const spotCount = 3 + Math.floor(rand() * 4);
+      for (let i = 0; i < spotCount; i++) {
+        const spot = new THREE.Mesh(cheeseSpotGeo, cheeseSpotMat);
+        const angle = rand() * Math.PI * 2;
+        const radius = rand() * 0.015;
+        spot.position.set(
+          Math.cos(angle) * radius,
+          0.013 + rand() * 0.008,
+          Math.sin(angle) * radius
+        );
+        const spotScale = 0.75 + rand() * 0.45;
+        spot.scale.setScalar(spotScale);
+        cap.add(spot);
+      }
+
+      const mushroom = {
+        id: mushroomId,
+        anchor,
+        sway,
+        stem,
+        cap,
+        plantedAt: options.plantedAt ?? clock.getElapsedTime(),
+        lifeSeconds: options.lifeSeconds ?? (CHEESE_LIFETIME_SECONDS * (0.9 + rand() * 0.2)),
+        phase: rand() * Math.PI * 2
+      };
+
+      cheeseMushrooms.push(mushroom);
+      cheeseMushroomsById.set(mushroomId, mushroom);
+      return mushroom;
+    }
+
+    function spawnCheesePoof(point, normal, seed) {
+      const rand = makeSeededRandom(seed ?? nextActionSeed());
+      const group = new THREE.Group();
+      group.position.copy(point).addScaledVector(normal, 0.008);
+      cheesePoofGroup.add(group);
+
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xffdf56,
+        emissive: 0xa88619,
+        roughness: 0.78,
+        metalness: 0.02,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false
+      });
+      const particles = [];
+      const count = 14 + Math.floor(rand() * 8);
+      for (let i = 0; i < count; i++) {
+        const puff = new THREE.Mesh(cheeseDustGeo, material);
+        const baseScale = 0.38 + rand() * 0.74;
+        puff.scale.setScalar(baseScale);
+        const velocity = new THREE.Vector3(
+          (rand() - 0.5) * 1.1,
+          0.22 + rand() * 1.15,
+          (rand() - 0.5) * 1.1
+        ).normalize();
+        velocity.addScaledVector(normal, 0.28 + rand() * 0.24);
+        velocity.normalize().multiplyScalar(0.04 + rand() * 0.08);
+        const origin = new THREE.Vector3(
+          (rand() - 0.5) * 0.013,
+          rand() * 0.01,
+          (rand() - 0.5) * 0.013
+        );
+        puff.position.copy(origin);
+        group.add(puff);
+        particles.push({
+          mesh: puff,
+          origin,
+          velocity,
+          baseScale,
+          phase: rand() * Math.PI * 2
+        });
+      }
+
+      cheesePoofs.push({
+        group,
+        material,
+        particles,
+        createdAt: clock.getElapsedTime(),
+        duration: CHEESE_POOF_SECONDS
+      });
+    }
+
+    function clearCheesePoofs() {
+      for (let i = 0; i < cheesePoofs.length; i++) {
+        cheesePoofs[i].material.dispose();
+      }
+      cheesePoofs.length = 0;
+      cheesePoofGroup.clear();
+    }
+
     function clearFlowers(broadcast = true) {
       if (carriedRose && carriedRose.group.parent) {
         carriedRose.group.parent.remove(carriedRose.group);
@@ -836,6 +1743,13 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       flowers.length = 0;
       flowersById.clear();
       rosesById.clear();
+      cheeseMushroomsGroup.clear();
+      cheeseMushrooms.length = 0;
+      cheeseMushroomsById.clear();
+      clearCheesePoofs();
+      possumNpcGroup.clear();
+      possumNpcs.length = 0;
+      nextPossumImmigrationSec = clock.getElapsedTime() + 2.2;
       remoteCarriedRoseByPlayer.clear();
       rosePickColliders.length = 0;
       flowerStemTargets.length = 0;
@@ -871,6 +1785,56 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         const sway = 0.065 * growth;
         flower.sway.rotation.x = Math.sin(nowSec * 2.1 + flower.phase) * sway;
         flower.sway.rotation.z = Math.cos(nowSec * 2.6 + flower.phase * 1.2) * sway * 0.8;
+      }
+    }
+
+    function updateCheeseMushrooms(nowSec) {
+      for (let i = cheeseMushrooms.length - 1; i >= 0; i--) {
+        const mushroom = cheeseMushrooms[i];
+        const age = nowSec - mushroom.plantedAt;
+        if (age >= mushroom.lifeSeconds) {
+          mushroom.cap.getWorldPosition(poofWorldPos);
+          mushroom.anchor.getWorldQuaternion(poofWorldQuat);
+          poofUpDir.copy(upAxis).applyQuaternion(poofWorldQuat).normalize();
+          spawnCheesePoof(poofWorldPos, poofUpDir, nextActionSeed());
+          if (mushroom.anchor.parent) mushroom.anchor.parent.remove(mushroom.anchor);
+          cheeseMushrooms.splice(i, 1);
+          cheeseMushroomsById.delete(mushroom.id);
+          continue;
+        }
+
+        const growth = smoothstep01(age / CHEESE_GROW_SECONDS);
+        const capGrowth = smoothstep01((growth - 0.08) / 0.92);
+        mushroom.stem.scale.y = Math.max(0.02, growth);
+        mushroom.cap.scale.setScalar(Math.max(0.02, capGrowth));
+        const sway = 0.05 * growth;
+        mushroom.sway.rotation.x = Math.sin(nowSec * 2.8 + mushroom.phase) * sway;
+        mushroom.sway.rotation.z = Math.cos(nowSec * 3.1 + mushroom.phase * 1.17) * sway * 0.78;
+      }
+    }
+
+    function updateCheesePoofs(nowSec) {
+      for (let i = cheesePoofs.length - 1; i >= 0; i--) {
+        const poof = cheesePoofs[i];
+        const age = nowSec - poof.createdAt;
+        const t = age / poof.duration;
+        if (t >= 1) {
+          if (poof.group.parent) poof.group.parent.remove(poof.group);
+          poof.material.dispose();
+          cheesePoofs.splice(i, 1);
+          continue;
+        }
+
+        const fade = 1 - t;
+        poof.material.opacity = 0.95 * fade * fade;
+        poof.group.scale.setScalar(1 + t * 0.42);
+        for (let pIndex = 0; pIndex < poof.particles.length; pIndex++) {
+          const particle = poof.particles[pIndex];
+          particle.mesh.position.copy(particle.origin).addScaledVector(particle.velocity, age);
+          particle.mesh.position.y -= age * age * 0.03;
+          const pulse = 0.84 + t * 1.45 + Math.sin(age * 18 + particle.phase) * 0.07;
+          particle.mesh.scale.setScalar(Math.max(0.02, particle.baseScale * pulse));
+        }
       }
     }
 
@@ -966,6 +1930,151 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       return true;
     }
 
+    function cloudPointerAngle(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const centerX = rect.left + rect.width * 0.5;
+      const centerY = rect.top + rect.height * 0.5;
+      const dx = event.clientX - centerX;
+      const dy = event.clientY - centerY;
+      if (dx * dx + dy * dy < 640) return null;
+      return Math.atan2(dy, dx);
+    }
+
+    function beginCloudSwirl(event) {
+      const angle = cloudPointerAngle(event);
+      if (angle === null) return false;
+      cloudSwirlPointerId = event.pointerId;
+      cloudSwirlLastAngle = angle;
+      cloudSwirlLastMs = performance.now();
+      return true;
+    }
+
+    function endCloudSwirl(pointerId = null) {
+      if (pointerId !== null && cloudSwirlPointerId !== null && pointerId !== cloudSwirlPointerId) return;
+      cloudSwirlPointerId = null;
+      cloudSwirlLastMs = 0;
+    }
+
+    function triggerTornado() {
+      const nowSec = clock.getElapsedTime();
+      tornadoUntilSec = Math.max(tornadoUntilSec, nowSec + CLOUD_TORNADO_DURATION);
+      cloudOrbitVelocity = THREE.MathUtils.clamp(
+        cloudOrbitVelocity + Math.sign(cloudOrbitVelocity || 1) * 1.6,
+        -7,
+        7
+      );
+    }
+
+    function trackCloudSwirl(event) {
+      if (cloudSwirlPointerId === null || event.pointerId !== cloudSwirlPointerId) return false;
+      const angle = cloudPointerAngle(event);
+      const nowMs = performance.now();
+      if (angle === null) {
+        cloudSwirlLastMs = nowMs;
+        return true;
+      }
+
+      const dt = Math.max(0.001, (nowMs - cloudSwirlLastMs) / 1000);
+      let delta = angle - cloudSwirlLastAngle;
+      if (delta > Math.PI) delta -= Math.PI * 2;
+      if (delta < -Math.PI) delta += Math.PI * 2;
+      cloudOrbitVelocity = THREE.MathUtils.clamp(cloudOrbitVelocity + delta * 5.5, -6, 6);
+
+      const speed = Math.abs(delta) / dt;
+      if (speed > CLOUD_TORNADO_SPEED) {
+        cloudSwirlMeter += (speed - CLOUD_TORNADO_SPEED) * dt * 0.42;
+        if (cloudSwirlMeter >= CLOUD_TORNADO_TRIGGER_SECONDS) {
+          cloudSwirlMeter = 0;
+          triggerTornado();
+        }
+      } else {
+        cloudSwirlMeter = Math.max(0, cloudSwirlMeter - dt * CLOUD_SWIRL_DECAY_PER_SEC);
+      }
+
+      cloudSwirlLastAngle = angle;
+      cloudSwirlLastMs = nowMs;
+      return true;
+    }
+
+    function updateCloudsAndTornado(nowSec, deltaSec) {
+      const tornadoTarget = nowSec < tornadoUntilSec ? 1 : 0;
+      const blend = 1 - Math.exp(-deltaSec * (tornadoTarget > tornadoIntensity ? 8 : 4.2));
+      tornadoIntensity += (tornadoTarget - tornadoIntensity) * blend;
+
+      cloudSwirlMeter = Math.max(
+        0,
+        cloudSwirlMeter - deltaSec * CLOUD_SWIRL_DECAY_PER_SEC * (cloudSwirlPointerId === null ? 1 : 0.35)
+      );
+
+      cloudOrbitVelocity *= Math.exp(-deltaSec * 2.4);
+      cloudOrbitAngle += cloudOrbitVelocity * deltaSec;
+      if (tornadoTarget > 0) cloudOrbitAngle += CLOUD_TORNADO_SPIN_BOOST * deltaSec;
+      cloudGroup.rotation.y = cloudOrbitAngle;
+
+      for (let i = 0; i < cloudGroup.children.length; i++) {
+        const cloud = cloudGroup.children[i];
+        const wobbleX = Math.sin(nowSec * cloud.userData.driftX + cloud.userData.phase) * 0.04;
+        const wobbleY = Math.sin(nowSec * cloud.userData.driftY + cloud.userData.phase * 1.17) * 0.03;
+        const wobbleZ = Math.cos(nowSec * cloud.userData.driftX * 0.78 + cloud.userData.phase * 1.31) * 0.04;
+        cloudPosTemp.set(
+          cloud.userData.baseX + wobbleX,
+          cloud.userData.baseY + wobbleY,
+          cloud.userData.baseZ + wobbleZ
+        ).normalize();
+        const radiusWobble = Math.sin(nowSec * (cloud.userData.driftY * 0.77) + cloud.userData.phase) * 0.015;
+        const layerRadius = cloud.userData.baseRadius + radiusWobble + tornadoIntensity * 0.02;
+        cloud.position.copy(cloudPosTemp).multiplyScalar(layerRadius);
+        const opacityPulse = 0.9 + Math.sin(nowSec * 0.9 + cloud.userData.phase) * 0.07;
+        cloud.material.opacity = cloud.userData.baseOpacity * opacityPulse * (1 - tornadoIntensity * 0.18);
+        const scalePulse = 1 + Math.sin(nowSec * 1.7 + cloud.userData.phase) * 0.05 + tornadoIntensity * 0.05;
+        cloud.scale.set(
+          cloud.userData.baseScaleX * scalePulse,
+          cloud.userData.baseScaleY * scalePulse,
+          1
+        );
+        cloud.material.color.setRGB(
+          1 - tornadoIntensity * 0.07,
+          1 - tornadoIntensity * 0.05,
+          1
+        );
+      }
+
+      if (tornadoIntensity < 0.01) {
+        tornadoGroup.visible = false;
+        tornadoCoreMat.opacity = 0;
+        tornadoBandMat.opacity = 0;
+        return;
+      }
+
+      tornadoGroup.visible = true;
+      tornadoGroup.position.set(
+        ball.position.x + Math.sin(nowSec * 1.4) * 0.02 * tornadoIntensity,
+        ball.position.y - 0.02,
+        ball.position.z + Math.cos(nowSec * 1.1) * 0.015 * tornadoIntensity
+      );
+      tornadoGroup.rotation.y += deltaSec * (4 + tornadoIntensity * 11);
+      tornadoCore.scale.set(
+        0.86 + tornadoIntensity * 0.2,
+        1 + tornadoIntensity * 0.08,
+        0.86 + tornadoIntensity * 0.2
+      );
+      tornadoCoreMat.opacity = 0.52 * tornadoIntensity;
+      tornadoCoreMat.emissiveIntensity = 0.32 + tornadoIntensity * 0.5;
+      tornadoBandMat.opacity = 0.36 * tornadoIntensity;
+
+      for (let i = 0; i < tornadoBands.length; i++) {
+        const band = tornadoBands[i];
+        const radius = band.userData.radius * (0.86 + tornadoIntensity * 0.48);
+        band.scale.set(radius, radius, radius);
+        band.rotation.z = nowSec * (4.5 + i * 0.42) + band.userData.phase;
+        band.position.x = Math.sin(nowSec * 2.1 + i * 0.55) * 0.03 * tornadoIntensity;
+      }
+    }
+
+    function handleCloudMode(event) {
+      return beginCloudSwirl(event);
+    }
+
     function handleSeedMode(event) {
       const hit = getBallHit(event);
       if (!hit) return false;
@@ -977,6 +2086,22 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         flowerId,
         roseId,
         seed,
+        point: toVecPayload(hit.point),
+        normal: toVecPayload(hit.normal)
+      });
+      return true;
+    }
+
+    function handleCheeseMode(event) {
+      const hit = getBallHit(event);
+      if (!hit) return false;
+      const mushroomId = createEntityId("cheese");
+      const seed = nextActionSeed();
+      createCheeseMushroomAt(hit.point, hit.normal, { mushroomId, seed });
+      sendMultiplayer("cheese_seed", {
+        mushroomId,
+        seed,
+        plantedAtMs: Date.now(),
         point: toVecPayload(hit.point),
         normal: toVecPayload(hit.normal)
       });
@@ -1026,7 +2151,9 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     function runPrimaryToolAction(event) {
       const mode = toolModeEl.value;
+      if (mode === "cloud") return handleCloudMode(event);
       if (mode === "seed") return handleSeedMode(event);
+      if (mode === "cheese") return handleCheeseMode(event);
       if (mode === "pluck") return handlePluckMode(event);
       return false;
     }
@@ -1065,6 +2192,9 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const carryDir = new THREE.Vector3();
     const carryNormal = new THREE.Vector3();
     const carryQuat = new THREE.Quaternion();
+    const poofWorldPos = new THREE.Vector3();
+    const poofWorldQuat = new THREE.Quaternion();
+    const poofUpDir = new THREE.Vector3();
 
     function setSurfaceBasis(normal) {
       const basisSeed = Math.abs(normal.y) > 0.92 ? axisX : upAxis;
@@ -1374,6 +2504,12 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const remotePoint = new THREE.Vector3();
     const remoteNormal = new THREE.Vector3();
 
+    function resolveNetworkPlantedAt(payload, serverTs) {
+      const plantedAtMs = Number(payload?.plantedAtMs) || Number(serverTs) || Date.now();
+      const ageSeconds = Math.max(0, (Date.now() - plantedAtMs) / 1000);
+      return clock.getElapsedTime() - ageSeconds;
+    }
+
     function handleMultiplayerMessage(message, allowSelf = false, replay = false) {
       if (!message) return;
       if (message.type === "snapshot") {
@@ -1433,6 +2569,20 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
           flowerId: payload.flowerId,
           roseId: payload.roseId,
           seed: Number(payload.seed) || 1
+        });
+        return;
+      }
+
+      if (message.type === "cheese_seed") {
+        if (!payload.point || !payload.normal) return;
+        const plantedAt = resolveNetworkPlantedAt(payload, message.serverTs);
+        if (clock.getElapsedTime() - plantedAt > CHEESE_LIFETIME_SECONDS) return;
+        fromVecPayload(remotePoint, payload.point);
+        fromVecPayload(remoteNormal, payload.normal).normalize();
+        createCheeseMushroomAt(remotePoint, remoteNormal, {
+          mushroomId: payload.mushroomId,
+          seed: Number(payload.seed) || 1,
+          plantedAt
         });
         return;
       }
@@ -1883,6 +3033,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
             controls.enabled = !didAction;
             if (didAction) event.preventDefault();
           } else {
+            endCloudSwirl();
             touchActionLock = false;
             controls.enabled = true;
           }
@@ -1932,7 +3083,10 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       broadcastCursorFromEvent(event);
       const mode = toolModeEl.value;
       if (mode !== "fur") {
-        if (mode === "pluck" && carriedRose) {
+        if (mode === "cloud") {
+          trackCloudSwirl(event);
+          carryPreviewOnBall = false;
+        } else if (mode === "pluck" && carriedRose) {
           previewCarriedRoseAtPointer(event, clock.getElapsedTime());
         } else {
           carryPreviewOnBall = false;
@@ -2010,6 +3164,9 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         activeTouchPointers.delete(event.pointerId);
 
         if (mode !== "fur") {
+          if (mode === "cloud") {
+            endCloudSwirl(event.pointerId);
+          }
           if (activeTouchPointers.size === 0) {
             touchActionLock = false;
             controls.enabled = true;
@@ -2032,6 +3189,9 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       }
 
       if (mode !== "fur") {
+        if (mode === "cloud") {
+          endCloudSwirl(event.pointerId);
+        }
         if (mouseActionLock) {
           mouseActionLock = false;
           controls.enabled = true;
@@ -2058,10 +3218,13 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     });
 
     const clock = new THREE.Clock();
+    let lastFrameTime = 0;
     initMultiplayer();
     function animate() {
       requestAnimationFrame(animate);
       const t = clock.getElapsedTime();
+      const dt = Math.min(0.05, Math.max(1 / 240, t - lastFrameTime));
+      lastFrameTime = t;
       const swish = Number(swishEl.value);
       const underShader = underMat.userData.shader;
       const guardShader = guardMat.userData.shader;
@@ -2079,15 +3242,15 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         grassShader.uniforms.uSwish.value = swish * 0.35;
       }
       processGrassBursts(t);
+      updatePossumNpcs(t, dt);
       updateFlowers(t);
+      updateCheeseMushrooms(t);
+      updateCheesePoofs(t);
       updateRemotePlayers(t);
       if (carriedRose && !carryPreviewOnBall) {
         setCarriedRoseInFront(t);
       }
-      for (let i = 0; i < cloudGroup.children.length; i++) {
-        const cloud = cloudGroup.children[i];
-        cloud.position.x = cloud.userData.baseX + Math.sin(t * cloud.userData.drift + cloud.userData.phase) * 0.6;
-      }
+      updateCloudsAndTornado(t, dt);
       key.position.x = 1.6 + Math.sin(t * 0.35) * 0.7;
       controls.update();
       renderer.render(scene, camera);

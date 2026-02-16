@@ -110,6 +110,7 @@ function persistOperation(room, message) {
 
   if (
     type === "seed" ||
+    type === "cheese_seed" ||
     type === "rose_pick" ||
     type === "rose_place_ball" ||
     type === "rose_place_flower"

@@ -111,9 +111,13 @@ function persistOperation(room, message) {
   if (
     type === "seed" ||
     type === "cheese_seed" ||
+    type === "cheese_pop" ||
+    type === "thought_flowerhead_spawn" ||
+    type === "thought_baby_spawn" ||
     type === "rose_pick" ||
     type === "rose_place_ball" ||
-    type === "rose_place_flower"
+    type === "rose_place_flower" ||
+    type === "rose_place_baby_hat"
   ) {
     roomState.flowerOps.push(message);
     if (roomState.flowerOps.length > MAX_FLOWER_OPS) {

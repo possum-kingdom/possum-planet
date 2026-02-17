@@ -111,6 +111,11 @@
       background: linear-gradient(135deg, #7f8ea0 0%, #5e6d80 100%);
     }
 
+    #spawnBabyPossumBtn {
+      margin-top: 4px;
+      background: linear-gradient(135deg, #8f7fb5 0%, #6d5a95 100%);
+    }
+
     #ui.collapsed {
       width: auto;
       max-width: calc(100vw - 24px);
@@ -186,6 +191,7 @@
     <input id="furColor" type="color" value="#dce1e7" />
     <button id="clearBtn" type="button">Clear Fur</button>
     <button id="clearFlowersBtn" type="button">Clear Flowers</button>
+    <button id="spawnBabyPossumBtn" type="button">Debug: Spawn Baby Opossum</button>
     </div>
   </div>
 
@@ -702,6 +708,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const furColorValueEl = document.getElementById("furColorValue");
     const clearBtn = document.getElementById("clearBtn");
     const clearFlowersBtn = document.getElementById("clearFlowersBtn");
+    const spawnBabyPossumBtn = document.getElementById("spawnBabyPossumBtn");
     const TOOL_LABELS = {
       fur: "Fur",
       seed: "Seed",
@@ -784,7 +791,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       lastPaintPosition = null;
       touchLastPaintPosition = null;
       endCloudSwirl();
-      controls.enabled = true;
+      controls.enabled = !possessedPossum;
       syncLabels();
       sendMultiplayer("hello", { tool: toolModeEl.value });
     });
@@ -833,22 +840,31 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const cheeseMushroomsGroup = new THREE.Group();
     const cheesePoofGroup = new THREE.Group();
     const possumNpcGroup = new THREE.Group();
+    const babyThinkBubbleGroup = new THREE.Group();
     scene.add(flowersGroup);
     scene.add(looseRosesGroup);
     scene.add(cheeseMushroomsGroup);
     scene.add(cheesePoofGroup);
     scene.add(possumNpcGroup);
+    scene.add(babyThinkBubbleGroup);
 
     const flowers = [];
     const flowersById = new Map();
     const rosesById = new Map();
     const cheeseMushrooms = [];
     const cheeseMushroomsById = new Map();
+    const cheeseMushroomPickColliders = [];
     const cheesePoofs = [];
     const possumNpcs = [];
+    const possumById = new Map();
+    const babyThinkPairs = [];
+    const babyThinkBubbleSprites = [];
+    const babyThinkItemPickColliders = [];
+    const possumPickColliders = [];
     const rosePickColliders = [];
     const flowerStemTargets = [];
     let carriedRose = null;
+    let carriedThoughtItem = null;
     let carryPreviewOnBall = false;
     let localEntityCounter = 0;
     let mouseActionLock = false;
@@ -856,18 +872,48 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const FLOWER_GROW_SECONDS = 0.95;
     const STEM_HEIGHT = 0.16;
     const CHEESE_GROW_SECONDS = 0.42;
-    const CHEESE_LIFETIME_SECONDS = 5.2;
     const CHEESE_POOF_SECONDS = 0.75;
     const POSSUM_MAX_COUNT = 18;
     const POSSUM_SURFACE_OFFSET = 0.07;
+    const WARRIOR_SPEED_MULTIPLIER = 1.16;
+    const CHEESE_POSSUM_MUSHROOM_ATTRACT_CHANCE = 0.97;
+    const DEFAULT_POSSUM_MUSHROOM_ATTRACT_CHANCE = 0.58;
+    const POSSESSION_MOVE_SPEED = 0.24;
+    const POSSESSION_STRAFE_SPEED = 0.2;
+    const POSSESSION_MOUSE_SENSITIVITY = 0.0022;
+    const POSSESSION_PITCH_LIMIT = THREE.MathUtils.degToRad(72);
     const POSSUM_IMMIGRATION_MIN_SECONDS = 4.5;
     const POSSUM_IMMIGRATION_MAX_SECONDS = 9.5;
     const POSSUM_IMMIGRATION_BASE_CHANCE = 0.32;
     const POSSUM_IMMIGRATION_FLOWER_BONUS = 0.045;
+    const POSSUM_IMMIGRATION_MUSHROOM_BONUS = 0.04;
     const POSSUM_IMMIGRATION_DENSITY_PENALTY = 0.03;
     const POSSUM_IMMIGRATION_BASE_BABY_CHANCE = 0.58;
     const POSSUM_IMMIGRATION_FLOWER_BABY_BONUS = 0.05;
+    const POSSUM_IMMIGRATION_BASE_CHEESE_CHANCE = 0.04;
+    const POSSUM_IMMIGRATION_MUSHROOM_CHEESE_BONUS = 0.1;
+    const BABY_THINK_PAIR_MIN_SECONDS = 6.5;
+    const BABY_THINK_PAIR_MAX_SECONDS = 11.5;
+    const BABY_THINK_COOLDOWN_SECONDS = 15.0;
+    const BABY_THINK_PAIR_CHECK_MIN_SECONDS = 5.5;
+    const BABY_THINK_PAIR_CHECK_MAX_SECONDS = 11.0;
+    const BABY_THINK_PAIR_BASE_CHANCE = 0.26;
+    const BABY_THINK_PAIR_FLOWER_BONUS = 0.06;
+    const BABY_THOUGHT_IDEAS = [
+      { text: "seed?", type: "seed" },
+      { text: "flowerhead?", type: "flowerhead" },
+      { text: "baby pal?", type: "baby" }
+    ];
     let nextPossumImmigrationSec = 2.8;
+    let nextBabyThinkPairCheckSec = 6.0;
+    let babyThinkPairCounter = 0;
+    let possessedPossum = null;
+    const possessionKeys = new Set();
+    let possessionLookYaw = 0;
+    let possessionLookPitch = 0;
+    let possessionLookDragging = false;
+    let possessionLastLookX = 0;
+    let possessionLastLookY = 0;
 
     const seedGeo = new THREE.SphereGeometry(0.009, 10, 8);
     const stemGeo = new THREE.CylinderGeometry(0.0034, 0.0046, STEM_HEIGHT, 7, 1, false);
@@ -881,6 +927,8 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     cheeseStemGeo.translate(0, 0.029, 0);
     const cheeseCapGeo = new THREE.SphereGeometry(0.04, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.58);
     const cheeseSpotGeo = new THREE.SphereGeometry(0.008, 10, 8);
+    const cheesePickGeo = new THREE.SphereGeometry(0.055, 12, 10);
+    const thoughtItemPickGeo = new THREE.SphereGeometry(0.04, 10, 8);
     const cheeseDustGeo = new THREE.SphereGeometry(0.01, 8, 6);
     const possumBodyGeo = new THREE.SphereGeometry(0.058, 16, 12);
     const possumHeadGeo = new THREE.SphereGeometry(0.03, 14, 10);
@@ -890,6 +938,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     possumLegGeo.translate(0, -0.0335, 0);
     const possumTailGeo = new THREE.CylinderGeometry(0.0065, 0.0042, 0.168, 8, 1, false);
     possumTailGeo.translate(0, -0.084, 0);
+    const possumPickGeo = new THREE.SphereGeometry(0.12, 12, 10);
     const possumFuzzGeo = new THREE.CylinderGeometry(0.0015, 0.00018, 0.03, 5, 1, false);
     possumFuzzGeo.translate(0, 0.015, 0);
     const invisiblePickMat = new THREE.MeshBasicMaterial({
@@ -1037,6 +1086,429 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const possumTempBasis = new THREE.Matrix4();
     const possumTempQuat = new THREE.Quaternion();
     const possumTempSpawnNormal = new THREE.Vector3();
+    const possessionLookDir = new THREE.Vector3();
+    const possessionMoveDir = new THREE.Vector3();
+    const possessionCameraPos = new THREE.Vector3();
+    const possessionCameraTarget = new THREE.Vector3();
+    const possessionQuatA = new THREE.Quaternion();
+    const possessionQuatB = new THREE.Quaternion();
+    const babyThinkMidpointNormal = new THREE.Vector3();
+    const babyThinkSideDir = new THREE.Vector3();
+    const babyThinkTargetA = new THREE.Vector3();
+    const babyThinkTargetB = new THREE.Vector3();
+    const babyThinkBubblePos = new THREE.Vector3();
+    const babyThinkItemPos = new THREE.Vector3();
+    const babyThinkItemQuat = new THREE.Quaternion();
+    const babyThinkAxisX = new THREE.Vector3(1, 0, 0);
+
+    function scheduleNextBabyThinkPairCheck(nowSec, rand = Math.random) {
+      const span = BABY_THINK_PAIR_CHECK_MAX_SECONDS - BABY_THINK_PAIR_CHECK_MIN_SECONDS;
+      nextBabyThinkPairCheckSec = nowSec + BABY_THINK_PAIR_CHECK_MIN_SECONDS + rand() * Math.max(0.1, span);
+    }
+
+    function createThoughtBubbleTexture(text, emphasize = false) {
+      const width = 300;
+      const height = 180;
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      const fill = emphasize ? "rgba(255,255,255,0.98)" : "rgba(251,252,255,0.94)";
+      const stroke = emphasize ? "rgba(129,101,171,0.95)" : "rgba(142,149,175,0.9)";
+      const textColor = emphasize ? "#5f437f" : "#4a5267";
+
+      function roundedRect(x, y, w, h, r) {
+        const rr = Math.min(r, w * 0.5, h * 0.5);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.arcTo(x + w, y, x + w, y + h, rr);
+        ctx.arcTo(x + w, y + h, x, y + h, rr);
+        ctx.arcTo(x, y + h, x, y, rr);
+        ctx.arcTo(x, y, x + w, y, rr);
+        ctx.closePath();
+      }
+
+      ctx.clearRect(0, 0, width, height);
+      roundedRect(16, 18, width - 32, 112, 28);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(width * 0.48, 130);
+      ctx.lineTo(width * 0.57, 166);
+      ctx.lineTo(width * 0.53, 128);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = "700 32px Trebuchet MS, Segoe UI, sans-serif";
+      ctx.fillStyle = textColor;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, width * 0.5, 74);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    function setBabyThinkBubbleText(pair, text, emphasize = false) {
+      if (!pair || !pair.sprite || !pair.sprite.material) return;
+      const mat = pair.sprite.material;
+      if (mat.map) mat.map.dispose();
+      mat.map = createThoughtBubbleTexture(text, emphasize);
+      mat.needsUpdate = true;
+      pair.thoughtText = text;
+    }
+
+    function thoughtIdeaAt(index = 0) {
+      const count = BABY_THOUGHT_IDEAS.length;
+      const safeIndex = (((Number(index) || 0) % count) + count) % count;
+      const idea = BABY_THOUGHT_IDEAS[safeIndex] || BABY_THOUGHT_IDEAS[0];
+      return {
+        index: safeIndex,
+        text: idea.text,
+        type: idea.type
+      };
+    }
+
+    function createBabyThinkItemVisual(type, withCollider = true) {
+      const group = new THREE.Group();
+      group.renderOrder = 16;
+
+      if (type === "flowerhead") {
+        for (let i = 0; i < 5; i++) {
+          const petal = new THREE.Mesh(petalInnerGeo, i % 2 === 0 ? rosePetalMatA : rosePetalMatB);
+          const angle = (i / 5) * Math.PI * 2;
+          petal.position.set(Math.cos(angle) * 0.012, Math.sin(angle) * 0.012, 0);
+          petal.scale.setScalar(0.36);
+          group.add(petal);
+        }
+        const center = new THREE.Mesh(roseCenterGeo, roseCenterMat);
+        center.scale.setScalar(0.55);
+        group.add(center);
+      } else if (type === "baby") {
+        const head = new THREE.Mesh(possumHeadGeo, possumFurMat);
+        head.scale.set(0.52, 0.52, 0.52);
+        group.add(head);
+        const earL = new THREE.Mesh(possumEarGeo, possumEarMat);
+        earL.position.set(-0.009, 0.012, -0.002);
+        earL.scale.setScalar(0.45);
+        group.add(earL);
+        const earR = earL.clone();
+        earR.position.x = 0.009;
+        group.add(earR);
+        const eyeL = new THREE.Mesh(possumNoseGeo, possumEyeMat);
+        eyeL.position.set(-0.006, 0.001, 0.011);
+        eyeL.scale.setScalar(0.45);
+        group.add(eyeL);
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.006;
+        group.add(eyeR);
+      } else {
+        const seed = new THREE.Mesh(seedGeo, seedMat);
+        seed.scale.setScalar(1.65);
+        group.add(seed);
+      }
+
+      let pickCollider = null;
+      if (withCollider) {
+        pickCollider = new THREE.Mesh(thoughtItemPickGeo, invisiblePickMat);
+        group.add(pickCollider);
+      }
+      return { group, pickCollider };
+    }
+
+    function removeBabyThinkItem(pair) {
+      if (!pair) return;
+      if (pair.itemPickCollider) {
+        const colliderIndex = babyThinkItemPickColliders.indexOf(pair.itemPickCollider);
+        if (colliderIndex >= 0) babyThinkItemPickColliders.splice(colliderIndex, 1);
+        pair.itemPickCollider.userData.babyThinkPair = null;
+      }
+      if (pair.itemGroup && pair.itemGroup.parent) {
+        pair.itemGroup.parent.remove(pair.itemGroup);
+      }
+      pair.itemGroup = null;
+      pair.itemPickCollider = null;
+      pair.itemType = null;
+    }
+
+    function setBabyThinkItemType(pair, type) {
+      if (!pair) return false;
+      if (pair.itemType === type && pair.itemGroup) return true;
+      removeBabyThinkItem(pair);
+      const visual = createBabyThinkItemVisual(type, true);
+      pair.itemType = type;
+      pair.itemGroup = visual.group;
+      pair.itemPickCollider = visual.pickCollider;
+      if (pair.itemPickCollider) {
+        pair.itemPickCollider.userData.babyThinkPair = pair;
+        babyThinkItemPickColliders.push(pair.itemPickCollider);
+      }
+      babyThinkBubbleGroup.add(pair.itemGroup);
+      return true;
+    }
+
+    function setBabyThinkIdea(pair, thoughtIndex, emphasize = false) {
+      if (!pair) return;
+      const idea = thoughtIdeaAt(thoughtIndex);
+      pair.thoughtIndex = idea.index;
+      setBabyThinkBubbleText(pair, idea.text, emphasize);
+      setBabyThinkItemType(pair, idea.type);
+    }
+
+    function cycleBabyThinkBubble(pair, nowSec) {
+      if (!pair || !pair.sprite) return;
+      const nextIndex = (pair.thoughtIndex + 1) % BABY_THOUGHT_IDEAS.length;
+      setBabyThinkIdea(pair, nextIndex, true);
+      pair.emphasisUntil = nowSec + 0.48;
+      pair.endSec = Math.max(pair.endSec, nowSec + 2.2);
+    }
+
+    function endBabyThinkPair(pair, nowSec) {
+      if (!pair) return;
+      const pairIndex = babyThinkPairs.indexOf(pair);
+      if (pairIndex >= 0) babyThinkPairs.splice(pairIndex, 1);
+
+      if (pair.sprite) {
+        const spriteIndex = babyThinkBubbleSprites.indexOf(pair.sprite);
+        if (spriteIndex >= 0) babyThinkBubbleSprites.splice(spriteIndex, 1);
+        pair.sprite.userData.babyThinkPair = null;
+        if (pair.sprite.parent) pair.sprite.parent.remove(pair.sprite);
+        if (pair.sprite.material) {
+          if (pair.sprite.material.map) pair.sprite.material.map.dispose();
+          pair.sprite.material.dispose();
+        }
+      }
+
+      if (carriedThoughtItem && carriedThoughtItem.pair === pair) {
+        if (carriedThoughtItem.previewGroup && carriedThoughtItem.previewGroup.parent) {
+          carriedThoughtItem.previewGroup.parent.remove(carriedThoughtItem.previewGroup);
+        }
+        carriedThoughtItem = null;
+        controls.enabled = !possessedPossum;
+      }
+      removeBabyThinkItem(pair);
+
+      const resetPossum = (possum) => {
+        if (!possum || possum.thinkPairId !== pair.id) return;
+        possum.thinkPairId = null;
+        possum.isThinking = false;
+        possum.thinkCooldownUntil = nowSec + BABY_THINK_COOLDOWN_SECONDS * (0.72 + possum.rand() * 0.66);
+        possum.thinkTargetNormal.copy(possum.normal);
+        possum.thinkLookNormal.copy(possum.forward);
+        choosePossumTarget(possum, nowSec, false);
+      };
+
+      resetPossum(pair.a);
+      resetPossum(pair.b);
+    }
+
+    function clearBabyThinkPairs(nowSec) {
+      for (let i = babyThinkPairs.length - 1; i >= 0; i--) {
+        endBabyThinkPair(babyThinkPairs[i], nowSec);
+      }
+      babyThinkPairs.length = 0;
+      babyThinkBubbleSprites.length = 0;
+      babyThinkItemPickColliders.length = 0;
+      babyThinkBubbleGroup.clear();
+    }
+
+    function findBabyThinkPairById(pairId) {
+      if (!pairId) return null;
+      for (let i = 0; i < babyThinkPairs.length; i++) {
+        const pair = babyThinkPairs[i];
+        if (pair && pair.id === pairId) return pair;
+      }
+      return null;
+    }
+
+    function startBabyThinkPair(a, b, nowSec) {
+      if (!a || !b || a === b) return null;
+      if (!a.isBaby || !b.isBaby) return null;
+      if (a.isWarrior || b.isWarrior) return null;
+      if (a.thinkPairId || b.thinkPairId) return null;
+
+      babyThinkMidpointNormal.copy(a.normal).add(b.normal);
+      if (babyThinkMidpointNormal.lengthSq() < 1e-6) {
+        babyThinkMidpointNormal.copy(a.normal);
+      }
+      babyThinkMidpointNormal.normalize();
+
+      babyThinkSideDir.crossVectors(babyThinkMidpointNormal, possumWorldUp);
+      if (babyThinkSideDir.lengthSq() < 1e-6) {
+        babyThinkSideDir.crossVectors(babyThinkMidpointNormal, babyThinkAxisX);
+      }
+      babyThinkSideDir.addScaledVector(
+        babyThinkMidpointNormal,
+        -babyThinkMidpointNormal.dot(babyThinkSideDir)
+      );
+      if (babyThinkSideDir.lengthSq() < 1e-6) return null;
+      babyThinkSideDir.normalize();
+
+      babyThinkTargetA.copy(babyThinkMidpointNormal).addScaledVector(babyThinkSideDir, 0.16).normalize();
+      babyThinkTargetB.copy(babyThinkMidpointNormal).addScaledVector(babyThinkSideDir, -0.16).normalize();
+      if (babyThinkTargetA.y < -0.26) {
+        babyThinkTargetA.y = -0.26;
+        babyThinkTargetA.normalize();
+      }
+      if (babyThinkTargetB.y < -0.26) {
+        babyThinkTargetB.y = -0.26;
+        babyThinkTargetB.normalize();
+      }
+
+      const thoughtIndex = Math.floor(Math.random() * BABY_THOUGHT_IDEAS.length);
+      const thoughtIdea = thoughtIdeaAt(thoughtIndex);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: createThoughtBubbleTexture(thoughtIdea.text, false),
+        transparent: true,
+        depthWrite: false
+      }));
+      sprite.renderOrder = 15;
+      sprite.scale.set(0.34, 0.22, 1);
+      babyThinkBubbleGroup.add(sprite);
+
+      babyThinkPairCounter += 1;
+      const pair = {
+        id: `baby-think-${babyThinkPairCounter}`,
+        a,
+        b,
+        sprite,
+        thoughtIndex,
+        thoughtText: thoughtIdea.text,
+        itemType: null,
+        itemGroup: null,
+        itemPickCollider: null,
+        emphasisUntil: 0,
+        seated: false,
+        phase: Math.random() * Math.PI * 2,
+        endSec: nowSec + BABY_THINK_PAIR_MIN_SECONDS + Math.random() * Math.max(0.1, BABY_THINK_PAIR_MAX_SECONDS - BABY_THINK_PAIR_MIN_SECONDS)
+      };
+      sprite.userData.babyThinkPair = pair;
+
+      a.thinkPairId = pair.id;
+      b.thinkPairId = pair.id;
+      a.isThinking = true;
+      b.isThinking = true;
+      a.thinkTargetNormal.copy(babyThinkTargetA);
+      b.thinkTargetNormal.copy(babyThinkTargetB);
+      a.thinkLookNormal.copy(babyThinkTargetB);
+      b.thinkLookNormal.copy(babyThinkTargetA);
+      a.state = "think";
+      b.state = "think";
+      a.stateUntil = pair.endSec;
+      b.stateUntil = pair.endSec;
+
+      setBabyThinkItemType(pair, thoughtIdea.type);
+      babyThinkPairs.push(pair);
+      babyThinkBubbleSprites.push(sprite);
+      return pair;
+    }
+
+    function updateBabyThinkPairs(nowSec, deltaSec) {
+      if (nowSec >= nextBabyThinkPairCheckSec) {
+        scheduleNextBabyThinkPairCheck(nowSec);
+        if (babyThinkPairs.length < 3) {
+          const candidates = [];
+          for (let i = 0; i < possumNpcs.length; i++) {
+            const possum = possumNpcs[i];
+            if (!possum.isBaby) continue;
+            if (possum.isWarrior) continue;
+            if (possum.thinkPairId || possum.isThinking) continue;
+            if (nowSec < possum.thinkCooldownUntil) continue;
+            candidates.push(possum);
+          }
+
+          if (candidates.length >= 2) {
+            const chance = THREE.MathUtils.clamp(
+              BABY_THINK_PAIR_BASE_CHANCE + Math.min(10, flowers.length) * BABY_THINK_PAIR_FLOWER_BONUS,
+              0.06,
+              0.94
+            );
+            if (Math.random() <= chance) {
+              const a = candidates[Math.floor(Math.random() * candidates.length)];
+              let best = null;
+              let bestScore = -Infinity;
+              for (let i = 0; i < candidates.length; i++) {
+                const b = candidates[i];
+                if (a === b) continue;
+                const score = a.normal.dot(b.normal) + Math.random() * 0.08;
+                if (score > bestScore) {
+                  best = b;
+                  bestScore = score;
+                }
+              }
+              if (best) {
+                startBabyThinkPair(a, best, nowSec);
+              }
+            }
+          }
+        }
+      }
+
+      for (let i = babyThinkPairs.length - 1; i >= 0; i--) {
+        const pair = babyThinkPairs[i];
+        if (!pair || !pair.a || !pair.b || pair.a.thinkPairId !== pair.id || pair.b.thinkPairId !== pair.id) {
+          endBabyThinkPair(pair, nowSec);
+          continue;
+        }
+        if (nowSec >= pair.endSec) {
+          endBabyThinkPair(pair, nowSec);
+          continue;
+        }
+
+        if (pair.emphasisUntil > 0 && nowSec >= pair.emphasisUntil) {
+          pair.emphasisUntil = 0;
+          const idea = thoughtIdeaAt(pair.thoughtIndex);
+          setBabyThinkBubbleText(pair, pair.thoughtText || idea.text, false);
+        }
+
+        pair.seated = (
+          pair.a.normal.dot(pair.a.thinkTargetNormal) > 0.997 &&
+          pair.b.normal.dot(pair.b.thinkTargetNormal) > 0.997
+        );
+
+        babyThinkBubblePos.copy(pair.a.normal).add(pair.b.normal);
+        if (babyThinkBubblePos.lengthSq() < 1e-6) {
+          babyThinkBubblePos.copy(pair.a.normal);
+        }
+        babyThinkBubblePos.normalize();
+        const hover = Math.sin(nowSec * 2.4 + pair.phase) * 0.016;
+        pair.sprite.position.copy(ball.position).addScaledVector(
+          babyThinkBubblePos,
+          ballRadius + POSSUM_SURFACE_OFFSET + 0.26 + hover
+        );
+
+        const pulse = 1 + Math.sin(nowSec * 3.7 + pair.phase * 1.4) * 0.05;
+        const clickPulse = pair.emphasisUntil > 0 ? 1.12 : 1;
+        pair.sprite.scale.set(0.34 * pulse * clickPulse, 0.22 * pulse * clickPulse, 1);
+        if (pair.itemGroup) {
+          const itemBob = Math.sin(nowSec * 2.8 + pair.phase * 1.7) * 0.01;
+          babyThinkItemPos.copy(ball.position).addScaledVector(
+            babyThinkBubblePos,
+            ballRadius + POSSUM_SURFACE_OFFSET + 0.195 + itemBob
+          );
+          pair.itemGroup.position.copy(babyThinkItemPos);
+          babyThinkItemQuat.setFromUnitVectors(upAxis, babyThinkBubblePos);
+          pair.itemGroup.quaternion.copy(babyThinkItemQuat);
+          pair.itemGroup.rotateY(nowSec * 0.8 + pair.phase);
+          pair.itemGroup.scale.setScalar(pair.emphasisUntil > 0 ? 1.12 : 1.0);
+          if (carriedThoughtItem && carriedThoughtItem.pair === pair) {
+            pair.itemGroup.visible = false;
+          } else {
+            pair.itemGroup.visible = true;
+          }
+        }
+      }
+    }
 
     function randomPossumNormal(target, rand = Math.random) {
       const z = rand() * 2 - 1;
@@ -1055,6 +1527,20 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       let choseAttractor = false;
       let bestAlignment = -Infinity;
 
+      if (!forceRandom && possum.isCheese && cheeseMushrooms.length > 0 && rand() < CHEESE_POSSUM_MUSHROOM_ATTRACT_CHANCE) {
+        bestAlignment = -Infinity;
+        for (let i = 0; i < cheeseMushrooms.length; i++) {
+          const mushroom = cheeseMushrooms[i];
+          possumTempTargetNormal.copy(mushroom.anchor.position).sub(ball.position).normalize();
+          const alignment = possum.normal.dot(possumTempTargetNormal);
+          if (alignment > bestAlignment) {
+            bestAlignment = alignment;
+            possum.targetNormal.copy(possumTempTargetNormal);
+            choseAttractor = true;
+          }
+        }
+      }
+
       if (!forceRandom) {
         const flowerAttractChance = flowers.length > 0 ? Math.min(0.92, 0.35 + flowers.length * 0.09) : 0;
         if (flowerAttractChance > 0 && rand() < flowerAttractChance) {
@@ -1071,7 +1557,12 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         }
       }
 
-      if (!forceRandom && !choseAttractor && cheeseMushrooms.length > 0 && rand() < 0.58) {
+      if (
+        !forceRandom &&
+        !choseAttractor &&
+        cheeseMushrooms.length > 0 &&
+        rand() < (possum.isCheese ? CHEESE_POSSUM_MUSHROOM_ATTRACT_CHANCE : DEFAULT_POSSUM_MUSHROOM_ATTRACT_CHANCE)
+      ) {
         bestAlignment = -Infinity;
         for (let i = 0; i < cheeseMushrooms.length; i++) {
           const mushroom = cheeseMushrooms[i];
@@ -1089,7 +1580,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         randomPossumNormal(possum.targetNormal, rand);
       }
 
-      const sniffChance = choseAttractor ? 0.12 : 0.3;
+      const sniffChance = choseAttractor ? (possum.isCheese ? 0.08 : 0.12) : 0.3;
       if (rand() < sniffChance) {
         possum.state = "sniff";
         possum.stateUntil = nowSec + 0.65 + rand() * 1.65;
@@ -1108,7 +1599,8 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       const thicknessMax = options.thicknessMax ?? 1.3;
       const lengthMin = options.lengthMin ?? 0.55;
       const lengthMax = options.lengthMax ?? 1.65;
-      const mesh = new THREE.InstancedMesh(possumFuzzGeo, possumFuzzMat, count);
+      const material = options.material || possumFuzzMat;
+      const mesh = new THREE.InstancedMesh(possumFuzzGeo, material, count);
       mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
       mesh.frustumCulled = false;
       mesh.renderOrder = 7;
@@ -1148,6 +1640,27 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     function createPossumNpc(possumId = createEntityId("opossum"), rand = Math.random, options = {}) {
       const isBaby = Boolean(options.baby);
+      const isCheese = Boolean(options.cheese);
+      const furMat = isCheese ? possumFurMat.clone() : possumFurMat;
+      const fuzzMat = isCheese ? possumFuzzMat.clone() : possumFuzzMat;
+      const bellyMat = isCheese ? possumBellyMat.clone() : possumBellyMat;
+      const earMat = isCheese ? possumEarMat.clone() : possumEarMat;
+      const tailMat = isCheese ? possumTailMat.clone() : possumTailMat;
+
+      if (isCheese) {
+        furMat.color.set(0xf5d95c);
+        furMat.emissive.set(0x604709);
+        furMat.emissiveIntensity = 0.05;
+        fuzzMat.color.set(0xffe78f);
+        fuzzMat.emissive.set(0x72520c);
+        fuzzMat.emissiveIntensity = 0.08;
+        bellyMat.color.set(0xffefbf);
+        bellyMat.emissive.set(0x5f4b1a);
+        bellyMat.emissiveIntensity = 0.02;
+        earMat.color.set(0xe2be6d);
+        tailMat.color.set(0xe4c781);
+      }
+
       const root = new THREE.Group();
       root.name = possumId;
       possumNpcGroup.add(root);
@@ -1155,12 +1668,19 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       const bodyPivot = new THREE.Group();
       root.add(bodyPivot);
 
-      const body = new THREE.Mesh(possumBodyGeo, possumFurMat);
+      const pickCollider = new THREE.Mesh(possumPickGeo, invisiblePickMat);
+      pickCollider.position.set(0, 0.12, 0.004);
+      pickCollider.scale.set(isBaby ? 0.76 : 0.96, isBaby ? 0.8 : 1.08, isBaby ? 0.84 : 0.98);
+      pickCollider.userData.possumId = possumId;
+      bodyPivot.add(pickCollider);
+      possumPickColliders.push(pickCollider);
+
+      const body = new THREE.Mesh(possumBodyGeo, furMat);
       body.position.y = 0.11;
       body.scale.set(0.92, 1.5, 0.75);
       bodyPivot.add(body);
 
-      const belly = new THREE.Mesh(possumBodyGeo, possumBellyMat);
+      const belly = new THREE.Mesh(possumBodyGeo, bellyMat);
       belly.scale.set(0.66, 0.9, 0.52);
       belly.position.set(0, 0.1, 0.025);
       bodyPivot.add(belly);
@@ -1169,9 +1689,13 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       headPivot.position.set(0, 0.22, 0.01);
       bodyPivot.add(headPivot);
 
-      const head = new THREE.Mesh(possumHeadGeo, possumFurMat);
+      const head = new THREE.Mesh(possumHeadGeo, furMat);
       head.scale.set(1.08, 1.12, 0.98);
       headPivot.add(head);
+
+      const hatMount = new THREE.Group();
+      hatMount.position.set(0, isBaby ? 0.024 : 0.028, 0.001);
+      headPivot.add(hatMount);
 
       const bodyFuzz = createPossumFuzzCluster(body, rand, {
         count: isBaby ? 130 : 190,
@@ -1181,7 +1705,8 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         thicknessMin: 0.66,
         thicknessMax: 1.35,
         lengthMin: 0.62,
-        lengthMax: 1.8
+        lengthMax: 1.8,
+        material: fuzzMat
       });
       const headFuzz = createPossumFuzzCluster(head, rand, {
         count: isBaby ? 78 : 110,
@@ -1191,10 +1716,11 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         thicknessMin: 0.62,
         thicknessMax: 1.22,
         lengthMin: 0.56,
-        lengthMax: 1.58
+        lengthMax: 1.58,
+        material: fuzzMat
       });
 
-      const nose = new THREE.Mesh(possumNoseGeo, possumEarMat);
+      const nose = new THREE.Mesh(possumNoseGeo, earMat);
       nose.position.set(0, -0.004, 0.028);
       headPivot.add(nose);
 
@@ -1207,7 +1733,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       eyeR.position.x = 0.011;
       headPivot.add(eyeR);
 
-      const earL = new THREE.Mesh(possumEarGeo, possumEarMat);
+      const earL = new THREE.Mesh(possumEarGeo, earMat);
       earL.position.set(-0.017, 0.021, -0.004);
       headPivot.add(earL);
 
@@ -1221,7 +1747,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       tailPivot.rotation.x = tailBaseX;
       bodyPivot.add(tailPivot);
 
-      const tail = new THREE.Mesh(possumTailGeo, possumTailMat);
+      const tail = new THREE.Mesh(possumTailGeo, tailMat);
       tail.scale.set(0.92, 0.95, 0.92);
       tailPivot.add(tail);
 
@@ -1239,13 +1765,13 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         limbPivot.position.set(limbData.x, limbData.y, limbData.z);
         limbPivot.userData.phase = limbData.phase;
         limbPivot.userData.kind = limbData.kind;
-        const limbMesh = new THREE.Mesh(possumLegGeo, possumFurMat);
+        const limbMesh = new THREE.Mesh(possumLegGeo, furMat);
         if (limbData.kind === "arm") {
           limbMesh.scale.set(0.84, 0.84, 0.84);
           limbPivot.rotation.z = limbData.x < 0 ? 0.2 : -0.2;
         } else {
           limbMesh.scale.set(1.02, 1.06, 1.02);
-          const foot = new THREE.Mesh(possumNoseGeo, possumEarMat);
+          const foot = new THREE.Mesh(possumNoseGeo, earMat);
           foot.scale.set(0.95, 0.58, 1.25);
           foot.position.set(0, -0.069, 0.004);
           limbMesh.add(foot);
@@ -1264,7 +1790,8 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         thicknessMin: 0.52,
         thicknessMax: 1.06,
         lengthMin: 0.48,
-        lengthMax: 1.1
+        lengthMax: 1.1,
+        material: fuzzMat
       });
       snoutFuzz.position.set(0, -0.001, 0.011);
 
@@ -1289,22 +1816,35 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         root,
         bodyPivot,
         headPivot,
+        hatMount,
         tailPivot,
         tailBaseX,
         bodyFuzz,
         headFuzz,
         legs,
+        pickCollider,
         normal,
         targetNormal,
         forward,
         isBaby,
+        isCheese,
+        isWarrior: false,
+        warriorRoseId: null,
+        speedMultiplier: 1,
+        playerControlled: false,
         state: "wander",
         stateUntil: 0,
         baseSpeed: (0.07 + rand() * 0.045) * (isBaby ? 1.2 : 1),
         turnSpeed: 1.5 + rand() * 1.4,
         moveBlend: 0,
+        thinkPoseBlend: 0,
         gaitPhase: rand() * Math.PI * 2,
         phase: rand() * Math.PI * 2,
+        thinkPairId: null,
+        thinkCooldownUntil: 0,
+        isThinking: false,
+        thinkTargetNormal: normal.clone(),
+        thinkLookNormal: forward.clone(),
         rand
       };
     }
@@ -1325,9 +1865,11 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       const rand = makeSeededRandom(rollSeed);
       const flowerCount = flowers.length;
       const cappedFlowers = Math.min(12, flowerCount);
+      const cappedMushrooms = Math.min(12, cheeseMushrooms.length);
       const spawnChance = THREE.MathUtils.clamp(
         POSSUM_IMMIGRATION_BASE_CHANCE +
-          cappedFlowers * POSSUM_IMMIGRATION_FLOWER_BONUS -
+          cappedFlowers * POSSUM_IMMIGRATION_FLOWER_BONUS +
+          cappedMushrooms * POSSUM_IMMIGRATION_MUSHROOM_BONUS -
           possumNpcs.length * POSSUM_IMMIGRATION_DENSITY_PENALTY,
         0.04,
         0.9
@@ -1336,6 +1878,11 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         POSSUM_IMMIGRATION_BASE_BABY_CHANCE + cappedFlowers * POSSUM_IMMIGRATION_FLOWER_BABY_BONUS,
         0.2,
         0.96
+      );
+      const cheeseChance = THREE.MathUtils.clamp(
+        POSSUM_IMMIGRATION_BASE_CHEESE_CHANCE + cappedMushrooms * POSSUM_IMMIGRATION_MUSHROOM_CHEESE_BONUS,
+        0.02,
+        0.9
       );
 
       const shouldSpawn = rand() <= spawnChance;
@@ -1354,59 +1901,172 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       possumTempSpawnNormal.y = THREE.MathUtils.clamp(possumTempSpawnNormal.y, -0.28, 0.9);
       possumTempSpawnNormal.normalize();
 
-      const baby = rand() <= babyChance;
+      const cheese = cappedMushrooms > 0 && rand() <= cheeseChance;
+      const baby = !cheese && rand() <= babyChance;
       const npcRand = makeSeededRandom(rollSeed ^ 0x9e3779b9);
       const possum = createPossumNpc(createEntityId("opossum"), npcRand, {
         baby,
+        cheese,
         spawnNormal: possumTempSpawnNormal
       });
+      if (possum.pickCollider) possum.pickCollider.userData.possum = possum;
       choosePossumTarget(possum, nowSec, false);
       possumNpcs.push(possum);
+      possumById.set(possum.id, possum);
       return true;
+    }
+
+    function spawnBabyPossumAtNormal(spawnNormal, nowSec, options = {}) {
+      const spawnAt = Number.isFinite(nowSec) ? nowSec : clock.getElapsedTime();
+      if (possumNpcs.length >= POSSUM_MAX_COUNT) return null;
+      const possumId = options.possumId || createEntityId("opossum");
+      if (possumById.has(possumId)) return possumById.get(possumId);
+      const seed = Number(options.seed) || (nextActionSeed() ^ 0x8f1bbcdc);
+      const rand = options.rand || makeSeededRandom(seed);
+      const normal = (spawnNormal ? spawnNormal.clone() : randomPossumNormal(new THREE.Vector3(), rand)).normalize();
+      normal.y = THREE.MathUtils.clamp(normal.y, -0.28, 0.92);
+      normal.normalize();
+      const possum = createPossumNpc(possumId, rand, {
+        baby: true,
+        spawnNormal: normal
+      });
+      if (possum.pickCollider) possum.pickCollider.userData.possum = possum;
+      choosePossumTarget(possum, spawnAt, true);
+      possumNpcs.push(possum);
+      possumById.set(possum.id, possum);
+      nextPossumImmigrationSec = Math.max(nextPossumImmigrationSec, spawnAt + 1.4);
+      return possum;
+    }
+
+    function debugSpawnBabyPossum(nowSec) {
+      const spawnNow = Number.isFinite(nowSec) ? nowSec : clock.getElapsedTime();
+      if (possumNpcs.length >= POSSUM_MAX_COUNT) return false;
+
+      const seed = nextActionSeed() ^ 0x8f1bbcdc;
+      const rand = makeSeededRandom(seed);
+      possumTempSpawnNormal.copy(camera.position).sub(ball.position).normalize().multiplyScalar(-1);
+      possumTempRight.crossVectors(possumTempSpawnNormal, possumWorldUp);
+      if (possumTempRight.lengthSq() < 1e-6) possumTempRight.set(1, 0, 0);
+      possumTempRight.normalize();
+      possumTempForward.crossVectors(possumTempRight, possumTempSpawnNormal).normalize();
+      possumTempSpawnNormal
+        .addScaledVector(possumTempRight, (rand() - 0.5) * 0.7)
+        .addScaledVector(possumTempForward, (rand() - 0.5) * 0.56);
+      possumTempSpawnNormal.y = THREE.MathUtils.clamp(possumTempSpawnNormal.y, -0.28, 0.88);
+      possumTempSpawnNormal.normalize();
+      return Boolean(spawnBabyPossumAtNormal(possumTempSpawnNormal, spawnNow, {
+        seed,
+        rand
+      }));
     }
 
     function updatePossumNpcs(nowSec, deltaSec) {
       tryPossumImmigration(nowSec);
       for (let i = 0; i < possumNpcs.length; i++) {
         const possum = possumNpcs[i];
-        if (nowSec >= possum.stateUntil) {
+        const controlled = possessedPossum === possum && possum.playerControlled;
+        const thinking = !controlled && possum.isThinking && Boolean(possum.thinkPairId);
+        const thinkPair = thinking ? findBabyThinkPairById(possum.thinkPairId) : null;
+        const seatedThinking = Boolean(thinkPair && thinkPair.seated);
+
+        if (controlled) {
+          possum.state = "possessed";
+          possum.stateUntil = Math.max(possum.stateUntil, nowSec + 0.5);
+        } else if (thinking) {
+          possum.targetNormal.copy(possum.thinkTargetNormal);
+          possum.state = "think";
+          possum.stateUntil = Math.max(possum.stateUntil, nowSec + 0.5);
+        } else if (nowSec >= possum.stateUntil) {
           choosePossumTarget(possum, nowSec);
         }
 
         const tornadoBoost = tornadoIntensity > 0.2 ? (1 + tornadoIntensity * 0.9) : 1;
-        let speed = possum.baseSpeed * tornadoBoost;
-        if (possum.state === "sniff" && tornadoIntensity < 0.6) {
+        let speed = possum.baseSpeed * (possum.speedMultiplier || 1) * tornadoBoost;
+        let possessionMoveStrength = 0;
+        if (controlled) {
+          const inputForward = (possessionKeys.has("KeyW") || possessionKeys.has("ArrowUp") ? 1 : 0) -
+            (possessionKeys.has("KeyS") || possessionKeys.has("ArrowDown") ? 1 : 0);
+          const inputStrafe = (possessionKeys.has("KeyD") || possessionKeys.has("ArrowRight") ? 1 : 0) -
+            (possessionKeys.has("KeyA") || possessionKeys.has("ArrowLeft") ? 1 : 0);
+
+          possumTempForward.copy(possum.forward)
+            .addScaledVector(possum.normal, -possum.normal.dot(possum.forward));
+          if (possumTempForward.lengthSq() < 1e-6) {
+            possumTempForward.crossVectors(possum.normal, possumWorldUp);
+            if (possumTempForward.lengthSq() < 1e-6) possumTempForward.set(1, 0, 0);
+          }
+          possumTempForward.normalize();
+
+          if (Math.abs(possessionLookYaw) > 1e-5) {
+            possessionQuatA.setFromAxisAngle(possum.normal, possessionLookYaw);
+            possumTempForward.applyQuaternion(possessionQuatA).normalize();
+          }
+
+          possumTempRight.crossVectors(possum.normal, possumTempForward);
+          if (possumTempRight.lengthSq() < 1e-6) possumTempRight.set(1, 0, 0);
+          possumTempRight.normalize();
+
+          possessionMoveDir.copy(possumTempForward).multiplyScalar(inputForward * POSSESSION_MOVE_SPEED)
+            .addScaledVector(possumTempRight, inputStrafe * POSSESSION_STRAFE_SPEED);
+          if (possessionMoveDir.lengthSq() > 1e-6) {
+            possessionMoveStrength = Math.min(1, possessionMoveDir.length());
+            possumTempMove.copy(possessionMoveDir).normalize();
+            speed = possum.baseSpeed * (possum.speedMultiplier || 1) * (1.5 + possessionMoveStrength * 1.8);
+            possum.forward.lerp(possumTempForward, 1 - Math.exp(-deltaSec * 8));
+            if (possum.forward.lengthSq() > 1e-6) possum.forward.normalize();
+            possessionLookYaw *= Math.exp(-deltaSec * 8);
+          } else {
+            possumTempMove.copy(possumTempForward);
+            speed = 0;
+          }
+        } else if (thinking) {
+          const settleDot = possum.normal.dot(possum.thinkTargetNormal);
+          if (seatedThinking || settleDot > 0.999) {
+            speed = 0;
+          } else {
+            speed = Math.min(speed, possum.baseSpeed * 0.72);
+          }
+        } else if (possum.state === "sniff" && tornadoIntensity < 0.6) {
           speed = 0.004;
         } else if (possum.state === "forage") {
           speed *= 1.15;
         }
 
-        possumTempMove.copy(possum.targetNormal)
-          .addScaledVector(possum.normal, -possum.normal.dot(possum.targetNormal));
-        if (possumTempMove.lengthSq() < 1e-5) {
+        if (!controlled) {
+          possumTempMove.copy(possum.targetNormal)
+            .addScaledVector(possum.normal, -possum.normal.dot(possum.targetNormal));
+        }
+        if (!controlled && possumTempMove.lengthSq() < 1e-5) {
           randomPossumNormal(possum.targetNormal, possum.rand);
           possumTempMove.copy(possum.targetNormal)
             .addScaledVector(possum.normal, -possum.normal.dot(possum.targetNormal));
         }
+        if (possumTempMove.lengthSq() < 1e-6) {
+          possumTempMove.copy(possum.forward)
+            .addScaledVector(possum.normal, -possum.normal.dot(possum.forward));
+          if (possumTempMove.lengthSq() < 1e-6) possumTempMove.set(1, 0, 0);
+        }
         possumTempMove.normalize();
 
-        possumTempSeparation.set(0, 0, 0);
-        for (let j = 0; j < possumNpcs.length; j++) {
-          if (i === j) continue;
-          const other = possumNpcs[j];
-          possumTempOther.copy(possum.normal).sub(other.normal);
-          const distanceSq = possumTempOther.lengthSq();
-          if (distanceSq <= 1e-6 || distanceSq > 0.1) continue;
-          possumTempSeparation.addScaledVector(possumTempOther, (0.1 - distanceSq) * 5.8);
-        }
-        if (possumTempSeparation.lengthSq() > 1e-6) {
-          possumTempSeparation.addScaledVector(
-            possum.normal,
-            -possum.normal.dot(possumTempSeparation)
-          );
+        if (!thinking && !controlled) {
+          possumTempSeparation.set(0, 0, 0);
+          for (let j = 0; j < possumNpcs.length; j++) {
+            if (i === j) continue;
+            const other = possumNpcs[j];
+            possumTempOther.copy(possum.normal).sub(other.normal);
+            const distanceSq = possumTempOther.lengthSq();
+            if (distanceSq <= 1e-6 || distanceSq > 0.1) continue;
+            possumTempSeparation.addScaledVector(possumTempOther, (0.1 - distanceSq) * 5.8);
+          }
           if (possumTempSeparation.lengthSq() > 1e-6) {
-            possumTempSeparation.normalize();
-            possumTempMove.lerp(possumTempSeparation, 0.34).normalize();
+            possumTempSeparation.addScaledVector(
+              possum.normal,
+              -possum.normal.dot(possumTempSeparation)
+            );
+            if (possumTempSeparation.lengthSq() > 1e-6) {
+              possumTempSeparation.normalize();
+              possumTempMove.lerp(possumTempSeparation, 0.34).normalize();
+            }
           }
         }
 
@@ -1417,16 +2077,24 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
           if (possum.forward.lengthSq() > 1e-6) possum.forward.normalize();
         }
 
-        if (possum.state !== "sniff" && possum.normal.dot(possum.targetNormal) > 0.992) {
+        if (!thinking && !controlled && possum.state !== "sniff" && possum.normal.dot(possum.targetNormal) > 0.992) {
           choosePossumTarget(possum, nowSec);
         }
 
-        const moveTarget = speed > 0.01 ? 1 : 0.16;
+        let moveTarget = speed > 0.01 ? 1 : 0.16;
+        if (controlled) {
+          moveTarget = possessionMoveStrength > 0.05 ? 1 : 0.08;
+        } else if (thinking) {
+          moveTarget = seatedThinking ? 0.02 : (possum.normal.dot(possum.thinkTargetNormal) > 0.998 ? 0.03 : 0.25);
+        }
         possum.moveBlend += (moveTarget - possum.moveBlend) * (1 - Math.exp(-deltaSec * 7));
-        possum.gaitPhase += deltaSec * (2.2 + speed * 34);
+        possum.gaitPhase += deltaSec * (thinking ? (1.15 + speed * 20) : (2.2 + speed * 34));
+        const thinkPoseTarget = thinking ? (seatedThinking ? 1 : (possum.moveBlend < 0.08 ? 1 : 0.55)) : 0;
+        possum.thinkPoseBlend += (thinkPoseTarget - possum.thinkPoseBlend) * (1 - Math.exp(-deltaSec * 6.2));
+        const thinkPose = possum.thinkPoseBlend;
 
-        const legSwing = 0.78 * possum.moveBlend;
-        const armSwing = 0.54 * possum.moveBlend;
+        const legSwing = 0.78 * possum.moveBlend * (1 - thinkPose * 0.74);
+        const armSwing = 0.54 * possum.moveBlend * (1 - thinkPose * 0.7);
         for (let legIndex = 0; legIndex < possum.legs.length; legIndex++) {
           const limb = possum.legs[legIndex];
           const stride = Math.sin(possum.gaitPhase + limb.userData.phase);
@@ -1437,9 +2105,22 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
             limb.rotation.x = 0.05 + stride * legSwing;
             limb.rotation.z = limb.userData.baseZRot || 0;
           }
+
+          if (thinkPose > 0.001) {
+            if (limb.userData.kind === "arm") {
+              const armSitX = -1.02 + Math.sin(nowSec * 1.7 + possum.phase + legIndex) * 0.04;
+              const armSitZ = (limb.userData.baseZRot || 0) * 0.25;
+              limb.rotation.x = THREE.MathUtils.lerp(limb.rotation.x, armSitX, thinkPose);
+              limb.rotation.z = THREE.MathUtils.lerp(limb.rotation.z, armSitZ, thinkPose);
+            } else {
+              const legSitX = 1.14 + Math.sin(nowSec * 1.5 + possum.phase + legIndex) * 0.03;
+              limb.rotation.x = THREE.MathUtils.lerp(limb.rotation.x, legSitX, thinkPose);
+              limb.rotation.z = THREE.MathUtils.lerp(limb.rotation.z, 0, thinkPose);
+            }
+          }
         }
 
-        const sniffWeight = possum.state === "sniff" ? 1 : 0;
+        const sniffWeight = !thinking && !controlled && possum.state === "sniff" ? 1 : 0;
         possum.headPivot.rotation.x =
           0.03 +
           Math.sin(nowSec * (3.8 + sniffWeight * 6.2) + possum.phase) * (0.05 + sniffWeight * 0.08);
@@ -1452,6 +2133,41 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
           Math.sin(nowSec * 5.5 + possum.phase * 1.2) * 0.14 -
           possum.moveBlend * 0.08;
         possum.tailPivot.rotation.y = Math.sin(nowSec * 3.8 + possum.phase) * 0.12 * possum.moveBlend;
+
+        if (thinkPose > 0.001) {
+          const thinkNod = Math.sin(nowSec * 1.9 + possum.phase) * 0.06;
+          possum.headPivot.rotation.x = THREE.MathUtils.lerp(
+            possum.headPivot.rotation.x,
+            0.22 + thinkNod,
+            thinkPose
+          );
+          possum.bodyPivot.rotation.x = THREE.MathUtils.lerp(
+            possum.bodyPivot.rotation.x,
+            0.24 + Math.sin(nowSec * 1.3 + possum.phase) * 0.028,
+            thinkPose
+          );
+          possum.bodyPivot.rotation.z = THREE.MathUtils.lerp(
+            possum.bodyPivot.rotation.z,
+            Math.sin(nowSec * 1.7 + possum.phase) * 0.02,
+            thinkPose
+          );
+          possum.tailPivot.rotation.x = THREE.MathUtils.lerp(
+            possum.tailPivot.rotation.x,
+            possum.tailBaseX - 0.24,
+            thinkPose
+          );
+          possum.tailPivot.rotation.y = THREE.MathUtils.lerp(possum.tailPivot.rotation.y, 0, thinkPose);
+        }
+
+        if (thinking) {
+          possumTempOther.copy(possum.thinkLookNormal)
+            .addScaledVector(possum.normal, -possum.normal.dot(possum.thinkLookNormal));
+          if (possumTempOther.lengthSq() > 1e-6) {
+            possumTempOther.normalize();
+            possum.forward.lerp(possumTempOther, 1 - Math.exp(-deltaSec * 5.4));
+            if (possum.forward.lengthSq() > 1e-6) possum.forward.normalize();
+          }
+        }
 
         possumTempRight.crossVectors(possum.normal, possum.forward);
         if (possumTempRight.lengthSq() < 1e-6) {
@@ -1466,9 +2182,10 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         possumTempQuat.setFromRotationMatrix(possumTempBasis);
         possum.root.quaternion.slerp(possumTempQuat, 1 - Math.exp(-deltaSec * possum.turnSpeed * 2.2));
 
-        const bob = Math.sin(possum.gaitPhase * 2) * 0.0075 * possum.moveBlend;
+        const bob = Math.sin(possum.gaitPhase * 2) * 0.0075 * possum.moveBlend * (1 - thinkPose * 0.9);
+        const sitDrop = thinkPose * 0.012;
         possum.root.position.copy(ball.position)
-          .addScaledVector(possum.normal, ballRadius + POSSUM_SURFACE_OFFSET + bob);
+          .addScaledVector(possum.normal, ballRadius + POSSUM_SURFACE_OFFSET + bob - sitDrop);
       }
     }
 
@@ -1480,6 +2197,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         group: new THREE.Group(),
         collider: null,
         ownerFlower: null,
+        ownerPossum: null,
         pickable: true
       };
 
@@ -1531,6 +2249,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     function attachRoseToFlower(flower, rose, rotationY = Math.random() * Math.PI * 2) {
       if (!flower || !rose || flower.rose) return false;
+      clearRosePossumOwner(rose, clock.getElapsedTime());
       if (rose.ownerFlower) rose.ownerFlower.rose = null;
       if (rose.group.parent) rose.group.parent.remove(rose.group);
       flower.bloomMount.add(rose.group);
@@ -1539,10 +2258,58 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       rose.group.rotation.y = rotationY;
       rose.group.scale.setScalar(1);
       rose.ownerFlower = flower;
+      rose.ownerPossum = null;
       flower.rose = rose;
       const canPick = flower.growth > 0.55;
       rose.pickable = canPick;
       rose.collider.userData.pickable = canPick;
+      return true;
+    }
+
+    function clearRosePossumOwner(rose, nowSec = clock.getElapsedTime()) {
+      if (!rose || !rose.ownerPossum) return false;
+      const owner = rose.ownerPossum;
+      rose.ownerPossum = null;
+      if (owner.warriorRoseId === rose.id) {
+        owner.warriorRoseId = null;
+        owner.isWarrior = false;
+        owner.speedMultiplier = 1;
+        owner.state = "wander";
+        owner.stateUntil = Math.max(owner.stateUntil, nowSec + 0.42);
+        owner.thinkCooldownUntil = Math.max(owner.thinkCooldownUntil, nowSec + 1.4);
+        if (!owner.playerControlled) choosePossumTarget(owner, nowSec, false);
+      }
+      return true;
+    }
+
+    function attachRoseToBabyWarrior(possum, rose, rotationY = Math.random() * Math.PI * 2, nowSec = clock.getElapsedTime()) {
+      if (!possum || !rose) return false;
+      if (!possum.isBaby || possum.warriorRoseId || !possum.hatMount) return false;
+      if (possum.thinkPairId) {
+        const pair = findBabyThinkPairById(possum.thinkPairId);
+        if (pair) endBabyThinkPair(pair, nowSec);
+      }
+      clearRosePossumOwner(rose, nowSec);
+      if (rose.ownerFlower) rose.ownerFlower.rose = null;
+      if (rose.group.parent) rose.group.parent.remove(rose.group);
+      possum.hatMount.add(rose.group);
+      rose.group.position.set(0, 0.008, 0.003);
+      rose.group.quaternion.identity();
+      rose.group.rotation.set(-0.22, rotationY, 0);
+      rose.group.scale.setScalar(0.86);
+      rose.ownerFlower = null;
+      rose.ownerPossum = possum;
+      rose.pickable = false;
+      rose.collider.userData.pickable = false;
+      possum.warriorRoseId = rose.id;
+      possum.isWarrior = true;
+      possum.speedMultiplier = WARRIOR_SPEED_MULTIPLIER;
+      possum.state = "forage";
+      possum.stateUntil = Math.max(possum.stateUntil, nowSec + 2.2);
+      possum.thinkPairId = null;
+      possum.isThinking = false;
+      possum.thinkCooldownUntil = Math.max(possum.thinkCooldownUntil, nowSec + 4.5);
+      choosePossumTarget(possum, nowSec, false);
       return true;
     }
 
@@ -1655,20 +2422,46 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         cap.add(spot);
       }
 
+      const pickCollider = new THREE.Mesh(cheesePickGeo, invisiblePickMat);
+      pickCollider.position.y = 0.055;
+      pickCollider.scale.set(1, 0.92, 1);
+      sway.add(pickCollider);
+
       const mushroom = {
         id: mushroomId,
         anchor,
         sway,
         stem,
         cap,
+        pickCollider,
         plantedAt: options.plantedAt ?? clock.getElapsedTime(),
-        lifeSeconds: options.lifeSeconds ?? (CHEESE_LIFETIME_SECONDS * (0.9 + rand() * 0.2)),
         phase: rand() * Math.PI * 2
       };
+      pickCollider.userData.cheeseMushroom = mushroom;
 
       cheeseMushrooms.push(mushroom);
       cheeseMushroomsById.set(mushroomId, mushroom);
+      cheeseMushroomPickColliders.push(pickCollider);
       return mushroom;
+    }
+
+    function popCheeseMushroom(mushroom, seed = nextActionSeed()) {
+      if (!mushroom) return false;
+      if (!cheeseMushroomsById.has(mushroom.id)) return false;
+      mushroom.cap.getWorldPosition(poofWorldPos);
+      mushroom.anchor.getWorldQuaternion(poofWorldQuat);
+      poofUpDir.copy(upAxis).applyQuaternion(poofWorldQuat).normalize();
+      spawnCheesePoof(poofWorldPos, poofUpDir, seed);
+      if (mushroom.anchor.parent) mushroom.anchor.parent.remove(mushroom.anchor);
+      const mushroomIndex = cheeseMushrooms.indexOf(mushroom);
+      if (mushroomIndex >= 0) cheeseMushrooms.splice(mushroomIndex, 1);
+      if (mushroom.pickCollider) {
+        const colliderIndex = cheeseMushroomPickColliders.indexOf(mushroom.pickCollider);
+        if (colliderIndex >= 0) cheeseMushroomPickColliders.splice(colliderIndex, 1);
+        mushroom.pickCollider.userData.cheeseMushroom = null;
+      }
+      cheeseMushroomsById.delete(mushroom.id);
+      return true;
     }
 
     function spawnCheesePoof(point, normal, seed) {
@@ -1733,6 +2526,9 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     }
 
     function clearFlowers(broadcast = true) {
+      const nowSec = clock.getElapsedTime();
+      releasePossessedPossum(nowSec);
+      stopCarriedThoughtItem(false, nowSec);
       if (carriedRose && carriedRose.group.parent) {
         carriedRose.group.parent.remove(carriedRose.group);
       }
@@ -1746,11 +2542,16 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       cheeseMushroomsGroup.clear();
       cheeseMushrooms.length = 0;
       cheeseMushroomsById.clear();
+      cheeseMushroomPickColliders.length = 0;
       clearCheesePoofs();
+      clearBabyThinkPairs(nowSec);
       possumNpcGroup.clear();
       possumNpcs.length = 0;
-      nextPossumImmigrationSec = clock.getElapsedTime() + 2.2;
+      possumById.clear();
+      nextPossumImmigrationSec = nowSec + 2.2;
+      scheduleNextBabyThinkPairCheck(nowSec);
       remoteCarriedRoseByPlayer.clear();
+      possumPickColliders.length = 0;
       rosePickColliders.length = 0;
       flowerStemTargets.length = 0;
       if (broadcast) sendMultiplayer("clear_flowers", {});
@@ -1758,6 +2559,10 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     clearFlowersBtn.addEventListener("click", () => {
       clearFlowers(true);
+    });
+
+    spawnBabyPossumBtn.addEventListener("click", () => {
+      debugSpawnBabyPossum(clock.getElapsedTime());
     });
 
     function updateFlowers(nowSec) {
@@ -1792,16 +2597,6 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       for (let i = cheeseMushrooms.length - 1; i >= 0; i--) {
         const mushroom = cheeseMushrooms[i];
         const age = nowSec - mushroom.plantedAt;
-        if (age >= mushroom.lifeSeconds) {
-          mushroom.cap.getWorldPosition(poofWorldPos);
-          mushroom.anchor.getWorldQuaternion(poofWorldQuat);
-          poofUpDir.copy(upAxis).applyQuaternion(poofWorldQuat).normalize();
-          spawnCheesePoof(poofWorldPos, poofUpDir, nextActionSeed());
-          if (mushroom.anchor.parent) mushroom.anchor.parent.remove(mushroom.anchor);
-          cheeseMushrooms.splice(i, 1);
-          cheeseMushroomsById.delete(mushroom.id);
-          continue;
-        }
 
         const growth = smoothstep01(age / CHEESE_GROW_SECONDS);
         const capGrowth = smoothstep01((growth - 0.08) / 0.92);
@@ -1873,6 +2668,165 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       return null;
     }
 
+    function getBabyThinkBubbleHit(event) {
+      if (babyThinkBubbleSprites.length === 0) return null;
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const ballHit = raycaster.intersectObject(ball, false)[0];
+      const maxDistance = ballHit ? ballHit.distance + 0.45 : Number.POSITIVE_INFINITY;
+      const hits = raycaster.intersectObjects(babyThinkBubbleSprites, false);
+      for (let i = 0; i < hits.length; i++) {
+        const hit = hits[i];
+        if (hit.distance > maxDistance) continue;
+        const pair = hit.object.userData.babyThinkPair;
+        if (!pair) continue;
+        return pair;
+      }
+      return null;
+    }
+
+    function getBabyThinkItemHit(event) {
+      if (babyThinkItemPickColliders.length === 0) return null;
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const ballHit = raycaster.intersectObject(ball, false)[0];
+      const maxDistance = ballHit ? ballHit.distance + 0.45 : Number.POSITIVE_INFINITY;
+      const hits = raycaster.intersectObjects(babyThinkItemPickColliders, false);
+      for (let i = 0; i < hits.length; i++) {
+        const hit = hits[i];
+        if (hit.distance > maxDistance) continue;
+        const pair = hit.object.userData.babyThinkPair;
+        if (!pair || !pair.itemType) continue;
+        if (pair.itemGroup && !pair.itemGroup.visible) continue;
+        return pair;
+      }
+      return null;
+    }
+
+    function beginCarriedThoughtItem(pair, event, nowSec = clock.getElapsedTime()) {
+      if (!pair || !pair.itemType) return false;
+      if (carriedThoughtItem) stopCarriedThoughtItem(false, nowSec);
+      const visual = createBabyThinkItemVisual(pair.itemType, false);
+      scene.add(visual.group);
+      carriedThoughtItem = {
+        pair,
+        type: pair.itemType,
+        pointerId: Number.isFinite(event?.pointerId) ? event.pointerId : null,
+        previewGroup: visual.group,
+        hasHit: false,
+        previewPoint: new THREE.Vector3(),
+        previewNormal: new THREE.Vector3(0, 1, 0)
+      };
+      if (pair.itemGroup) pair.itemGroup.visible = false;
+      updateCarriedThoughtItemPreview(event, nowSec);
+      return true;
+    }
+
+    function updateCarriedThoughtItemPreview(event, nowSec = clock.getElapsedTime()) {
+      if (!carriedThoughtItem || !carriedThoughtItem.previewGroup) return false;
+      if (
+        carriedThoughtItem.pointerId !== null &&
+        Number.isFinite(event?.pointerId) &&
+        event.pointerId !== carriedThoughtItem.pointerId
+      ) {
+        return false;
+      }
+
+      const hit = getBallHit(event);
+      if (hit) {
+        carryThoughtPoint.copy(hit.point).addScaledVector(hit.normal, 0.026);
+        carryThoughtNormal.copy(hit.normal);
+        carriedThoughtItem.previewPoint.copy(hit.point);
+        carriedThoughtItem.previewNormal.copy(hit.normal);
+        carriedThoughtItem.hasHit = true;
+        carriedThoughtItem.previewGroup.position.copy(carryThoughtPoint);
+        carryThoughtQuat.setFromUnitVectors(upAxis, carryThoughtNormal);
+        carriedThoughtItem.previewGroup.quaternion.copy(carryThoughtQuat);
+        carriedThoughtItem.previewGroup.rotateY(nowSec * 1.6);
+      } else {
+        carriedThoughtItem.hasHit = false;
+        camera.getWorldDirection(carryDir);
+        carriedThoughtItem.previewGroup.position.copy(camera.position).addScaledVector(carryDir, 0.72);
+        carriedThoughtItem.previewGroup.position.y -= 0.05;
+        carriedThoughtItem.previewGroup.quaternion.copy(camera.quaternion);
+        carriedThoughtItem.previewGroup.rotateX(-0.2);
+        carriedThoughtItem.previewGroup.rotateZ(Math.sin(nowSec * 5.2) * 0.08);
+      }
+      return true;
+    }
+
+    function stopCarriedThoughtItem(placeInWorld = false, nowSec = clock.getElapsedTime()) {
+      if (!carriedThoughtItem) return false;
+      const state = carriedThoughtItem;
+      carriedThoughtItem = null;
+      if (state.previewGroup && state.previewGroup.parent) {
+        state.previewGroup.parent.remove(state.previewGroup);
+      }
+      if (state.pair && state.pair.itemGroup) {
+        state.pair.itemGroup.visible = true;
+      }
+
+      let placed = false;
+      if (placeInWorld && state.hasHit) {
+        placed = spawnThoughtIdeaAtPoint(state.type, state.previewPoint, state.previewNormal, nowSec, true);
+        if (placed && state.pair && state.pair.thinkPairId === state.pair.id) {
+          const nextThought = Math.floor(Math.random() * BABY_THOUGHT_IDEAS.length);
+          setBabyThinkIdea(state.pair, nextThought, true);
+          state.pair.emphasisUntil = nowSec + 0.42;
+          state.pair.endSec = Math.max(state.pair.endSec, nowSec + 2.0);
+        }
+      }
+      return placed;
+    }
+
+    function getPossumHit(event) {
+      if (possumPickColliders.length === 0) return null;
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(possumPickColliders, false);
+      for (let i = 0; i < hits.length; i++) {
+        const possum = hits[i].object.userData.possum;
+        if (!possum) continue;
+        return possum;
+      }
+      return null;
+    }
+
+    function getBabyPossumHatHit(event) {
+      if (possumPickColliders.length === 0) return null;
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const ballHit = raycaster.intersectObject(ball, false)[0];
+      const maxDistance = ballHit ? ballHit.distance + 0.18 : Number.POSITIVE_INFINITY;
+      const hits = raycaster.intersectObjects(possumPickColliders, false);
+      for (let i = 0; i < hits.length; i++) {
+        if (hits[i].distance > maxDistance) continue;
+        const possum = hits[i].object.userData.possum;
+        if (!possum || !possum.isBaby) continue;
+        if (possum.warriorRoseId || !possum.hatMount) continue;
+        return possum;
+      }
+      return null;
+    }
+
+    function getCheeseMushroomHit(event) {
+      if (cheeseMushroomPickColliders.length === 0) return null;
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const ballHit = raycaster.intersectObject(ball, false)[0];
+      const maxDistance = ballHit ? ballHit.distance + 0.18 : Number.POSITIVE_INFINITY;
+      const hits = raycaster.intersectObjects(cheeseMushroomPickColliders, false);
+      for (let i = 0; i < hits.length; i++) {
+        const hitData = hits[i];
+        if (hitData.distance > maxDistance) continue;
+        const mushroom = hitData.object.userData.cheeseMushroom;
+        if (!mushroom) continue;
+        if (!cheeseMushroomsById.has(mushroom.id)) continue;
+        return mushroom;
+      }
+      return null;
+    }
+
     function setCarriedRoseInFront(nowSec) {
       if (!carriedRose) return;
       camera.getWorldDirection(carryDir);
@@ -1885,6 +2839,18 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     function previewCarriedRoseAtPointer(event, nowSec) {
       if (!carriedRose) return;
+      const babyTarget = getBabyPossumHatHit(event);
+      if (babyTarget && babyTarget.hatMount) {
+        carryPreviewOnBall = false;
+        babyTarget.hatMount.getWorldPosition(carryHatWorldPos);
+        babyTarget.hatMount.getWorldQuaternion(carryHatWorldQuat);
+        carriedRose.group.position.copy(carryHatWorldPos).addScaledVector(babyTarget.normal, 0.008);
+        carriedRose.group.quaternion.copy(carryHatWorldQuat);
+        carriedRose.group.rotateX(-0.22);
+        carriedRose.group.rotateY(nowSec * 1.8);
+        carriedRose.group.scale.setScalar(0.86);
+        return;
+      }
       const hit = getBallHit(event);
       if (!hit) {
         carryPreviewOnBall = false;
@@ -1901,6 +2867,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     function pickRose(rose, nowSec) {
       if (!rose || carriedRose === rose) return false;
+      clearRosePossumOwner(rose, nowSec);
       if (rose.ownerFlower) rose.ownerFlower.rose = null;
       rose.ownerFlower = null;
       rose.pickable = false;
@@ -1915,8 +2882,10 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     function placeRoseOnBall(rose, point, normal, rotationY = Math.random() * Math.PI * 2) {
       if (!rose) return false;
+      clearRosePossumOwner(rose, clock.getElapsedTime());
       if (rose.ownerFlower) rose.ownerFlower.rose = null;
       rose.ownerFlower = null;
+      rose.ownerPossum = null;
       if (rose.group.parent) rose.group.parent.remove(rose.group);
       looseRosesGroup.add(rose.group);
       carryNormal.copy(normal).normalize();
@@ -2075,21 +3044,72 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       return beginCloudSwirl(event);
     }
 
+    function spawnFlowerSeedAt(point, normal, broadcast = true, options = {}) {
+      if (!point || !normal) return null;
+      const flowerId = options.flowerId || createEntityId("flower");
+      const roseId = options.roseId || createEntityId("rose");
+      const seed = Number(options.seed) || nextActionSeed();
+      createFlowerAt(point, normal, { flowerId, roseId, seed });
+      if (broadcast) {
+        sendMultiplayer("seed", {
+          flowerId,
+          roseId,
+          seed,
+          point: toVecPayload(point),
+          normal: toVecPayload(normal)
+        });
+      }
+      return { flowerId, roseId, seed };
+    }
+
+    function spawnFlowerheadRoseAt(point, normal, broadcast = true, options = {}) {
+      if (!point || !normal) return null;
+      const roseId = options.roseId || createEntityId("rose");
+      const seed = Number(options.seed) || nextActionSeed();
+      const rotation = Number.isFinite(Number(options.rotation))
+        ? Number(options.rotation)
+        : ((seed / 4294967296) * Math.PI * 2);
+      const rose = createRoseEntity(roseId, makeSeededRandom(seed));
+      if (!placeRoseOnBall(rose, point, normal, rotation)) return null;
+      if (broadcast) {
+        sendMultiplayer("thought_flowerhead_spawn", {
+          roseId,
+          seed,
+          rotation,
+          point: toVecPayload(point),
+          normal: toVecPayload(normal)
+        });
+      }
+      return { roseId, seed, rotation };
+    }
+
+    function spawnThoughtBabyAt(normal, nowSec = clock.getElapsedTime(), broadcast = true, options = {}) {
+      if (!normal) return null;
+      const possumId = options.possumId || createEntityId("opossum");
+      const seed = Number(options.seed) || nextActionSeed();
+      const possum = spawnBabyPossumAtNormal(normal, nowSec, { possumId, seed });
+      if (!possum) return null;
+      if (broadcast) {
+        sendMultiplayer("thought_baby_spawn", {
+          possumId: possum.id,
+          seed,
+          normal: toVecPayload(possum.normal)
+        });
+      }
+      return { possumId: possum.id, seed };
+    }
+
+    function spawnThoughtIdeaAtPoint(type, point, normal, nowSec = clock.getElapsedTime(), broadcast = true) {
+      if (type === "seed") return Boolean(spawnFlowerSeedAt(point, normal, broadcast));
+      if (type === "flowerhead") return Boolean(spawnFlowerheadRoseAt(point, normal, broadcast));
+      if (type === "baby") return Boolean(spawnThoughtBabyAt(normal, nowSec, broadcast));
+      return false;
+    }
+
     function handleSeedMode(event) {
       const hit = getBallHit(event);
       if (!hit) return false;
-      const flowerId = createEntityId("flower");
-      const roseId = createEntityId("rose");
-      const seed = nextActionSeed();
-      createFlowerAt(hit.point, hit.normal, { flowerId, roseId, seed });
-      sendMultiplayer("seed", {
-        flowerId,
-        roseId,
-        seed,
-        point: toVecPayload(hit.point),
-        normal: toVecPayload(hit.normal)
-      });
-      return true;
+      return Boolean(spawnFlowerSeedAt(hit.point, hit.normal, true));
     }
 
     function handleCheeseMode(event) {
@@ -2098,6 +3118,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       const mushroomId = createEntityId("cheese");
       const seed = nextActionSeed();
       createCheeseMushroomAt(hit.point, hit.normal, { mushroomId, seed });
+      nextPossumImmigrationSec = Math.min(nextPossumImmigrationSec, clock.getElapsedTime() + 0.9);
       sendMultiplayer("cheese_seed", {
         mushroomId,
         seed,
@@ -2111,6 +3132,24 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     function handlePluckMode(event) {
       const nowSec = clock.getElapsedTime();
       if (carriedRose) {
+        const baby = getBabyPossumHatHit(event);
+        if (baby) {
+          const roseId = carriedRose.id;
+          const rotation = (nextActionSeed() / 4294967296) * Math.PI * 2;
+          const attached = attachRoseToBabyWarrior(baby, carriedRose, rotation, nowSec);
+          if (attached) {
+            carriedRose = null;
+            carryPreviewOnBall = false;
+            sendMultiplayer("rose_place_baby_hat", {
+              possumId: baby.id,
+              roseId,
+              rotation,
+              normal: toVecPayload(baby.normal)
+            });
+            return true;
+          }
+        }
+
         const flower = getEmptyFlowerTargetHit(event);
         if (flower) {
           const roseId = carriedRose.id;
@@ -2167,6 +3206,8 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     let touchLastPaintPosition = null;
     let touchLastPaintMs = 0;
     const activeTouchPointers = new Set();
+    let lastPointerClientX = window.innerWidth * 0.5;
+    let lastPointerClientY = window.innerHeight * 0.5;
 
     const tempObj = new THREE.Object3D();
     const hitPos = new THREE.Vector3();
@@ -2192,9 +3233,199 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const carryDir = new THREE.Vector3();
     const carryNormal = new THREE.Vector3();
     const carryQuat = new THREE.Quaternion();
+    const carryHatWorldPos = new THREE.Vector3();
+    const carryHatWorldQuat = new THREE.Quaternion();
+    const carryThoughtPoint = new THREE.Vector3();
+    const carryThoughtNormal = new THREE.Vector3(0, 1, 0);
+    const carryThoughtQuat = new THREE.Quaternion();
     const poofWorldPos = new THREE.Vector3();
     const poofWorldQuat = new THREE.Quaternion();
     const poofUpDir = new THREE.Vector3();
+
+    function isKeyboardTypingTarget(target) {
+      if (!target) return false;
+      const tag = String(target.tagName || "").toUpperCase();
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      return Boolean(target.isContentEditable);
+    }
+
+    function releasePossessedPossum(nowSec = clock.getElapsedTime()) {
+      const releaseAt = Number.isFinite(nowSec) ? nowSec : clock.getElapsedTime();
+      if (!possessedPossum) return false;
+
+      const previous = possessedPossum;
+      possessedPossum = null;
+      previous.playerControlled = false;
+      previous.state = "wander";
+      previous.stateUntil = releaseAt + 0.5;
+      previous.isThinking = false;
+      previous.thinkPairId = null;
+      previous.thinkCooldownUntil = releaseAt + 2.8;
+      choosePossumTarget(previous, releaseAt, false);
+
+      possessionKeys.clear();
+      possessionLookYaw = 0;
+      possessionLookPitch = 0;
+      possessionLookDragging = false;
+      camera.up.set(0, 1, 0);
+      controls.target.set(0, 0.05, 0);
+      controls.enabled = true;
+      controls.update();
+      if (document.pointerLockElement === renderer.domElement && document.exitPointerLock) {
+        document.exitPointerLock();
+      }
+      return true;
+    }
+
+    function possessPossum(possum, nowSec = clock.getElapsedTime()) {
+      if (!possum) return false;
+      const possessAt = Number.isFinite(nowSec) ? nowSec : clock.getElapsedTime();
+      if (possessedPossum === possum) return true;
+
+      if (possum.thinkPairId) {
+        for (let i = 0; i < babyThinkPairs.length; i++) {
+          const pair = babyThinkPairs[i];
+          if (pair && pair.id === possum.thinkPairId) {
+            endBabyThinkPair(pair, possessAt);
+            break;
+          }
+        }
+      }
+
+      if (possessedPossum) {
+        const previous = possessedPossum;
+        previous.playerControlled = false;
+        previous.state = "wander";
+        previous.stateUntil = possessAt + 0.4;
+        choosePossumTarget(previous, possessAt, false);
+      }
+
+      possessedPossum = possum;
+      possum.playerControlled = true;
+      possum.isThinking = false;
+      possum.thinkPairId = null;
+      possum.thinkCooldownUntil = possessAt + 4.0;
+      possum.state = "possessed";
+      possum.stateUntil = possessAt + 0.5;
+      possum.thinkPoseBlend = 0;
+      possum.moveBlend = Math.max(possum.moveBlend, 0.12);
+
+      painting = false;
+      touchPainting = false;
+      lastPaintPosition = null;
+      touchLastPaintPosition = null;
+      touchActionLock = false;
+      mouseActionLock = false;
+      activeTouchPointers.clear();
+      carryPreviewOnBall = false;
+      endCloudSwirl();
+      controls.enabled = false;
+
+      possessionKeys.clear();
+      possessionLookYaw = 0;
+      possessionLookPitch = 0;
+      possessionLookDragging = false;
+
+      if (renderer.domElement.requestPointerLock) {
+        try {
+          const lockPromise = renderer.domElement.requestPointerLock();
+          if (lockPromise && typeof lockPromise.catch === "function") {
+            lockPromise.catch(() => {});
+          }
+        } catch (error) {
+          // First-person still works without pointer lock via drag fallback.
+        }
+      }
+      return true;
+    }
+
+    function updatePossessionLookFromPointer(event) {
+      if (!possessedPossum || event.pointerType === "touch") return;
+      let deltaX = 0;
+      let deltaY = 0;
+      if (document.pointerLockElement === renderer.domElement) {
+        deltaX = Number(event.movementX) || 0;
+        deltaY = Number(event.movementY) || 0;
+      } else if (possessionLookDragging) {
+        deltaX = event.clientX - possessionLastLookX;
+        deltaY = event.clientY - possessionLastLookY;
+        possessionLastLookX = event.clientX;
+        possessionLastLookY = event.clientY;
+      } else {
+        return;
+      }
+
+      possessionLookYaw -= deltaX * POSSESSION_MOUSE_SENSITIVITY;
+      possessionLookYaw = THREE.MathUtils.clamp(possessionLookYaw, -1.45, 1.45);
+      possessionLookPitch = THREE.MathUtils.clamp(
+        possessionLookPitch - deltaY * POSSESSION_MOUSE_SENSITIVITY * 0.8,
+        -POSSESSION_PITCH_LIMIT,
+        POSSESSION_PITCH_LIMIT * 0.8
+      );
+    }
+
+    function updatePossessionCamera(nowSec, deltaSec) {
+      if (!possessedPossum || !possessedPossum.playerControlled) return false;
+      if (!possessedPossum.root || !possessedPossum.root.parent) {
+        releasePossessedPossum(nowSec);
+        return false;
+      }
+
+      possumTempForward.copy(possessedPossum.forward)
+        .addScaledVector(possessedPossum.normal, -possessedPossum.normal.dot(possessedPossum.forward));
+      if (possumTempForward.lengthSq() < 1e-6) {
+        possumTempForward.crossVectors(possessedPossum.normal, possumWorldUp);
+        if (possumTempForward.lengthSq() < 1e-6) possumTempForward.set(1, 0, 0);
+      }
+      possumTempForward.normalize();
+
+      possessionLookDir.copy(possumTempForward);
+      if (Math.abs(possessionLookYaw) > 1e-6) {
+        possessionQuatA.setFromAxisAngle(possessedPossum.normal, possessionLookYaw);
+        possessionLookDir.applyQuaternion(possessionQuatA).normalize();
+      }
+      possumTempRight.crossVectors(possessedPossum.normal, possessionLookDir);
+      if (possumTempRight.lengthSq() < 1e-6) {
+        possumTempRight.crossVectors(possessedPossum.normal, possumWorldUp);
+        if (possumTempRight.lengthSq() < 1e-6) possumTempRight.set(1, 0, 0);
+      }
+      possumTempRight.normalize();
+
+      if (Math.abs(possessionLookPitch) > 1e-6) {
+        possessionQuatB.setFromAxisAngle(possumTempRight, possessionLookPitch);
+        possessionLookDir.applyQuaternion(possessionQuatB).normalize();
+      }
+
+      const bodyScale = possessedPossum.root.scale.x;
+      const eyeOffset = possessedPossum.isBaby ? 0.08 : 0.11;
+      possessionCameraPos.copy(possessedPossum.root.position)
+        .addScaledVector(possessedPossum.normal, eyeOffset * bodyScale + 0.028);
+      possessionCameraTarget.copy(possessionCameraPos).addScaledVector(possessionLookDir, 1.2);
+      camera.position.copy(possessionCameraPos);
+      camera.up.copy(possessedPossum.normal);
+      camera.lookAt(possessionCameraTarget);
+      return true;
+    }
+
+    function onDoubleClick(event) {
+      if (isUIInteractionTarget(event)) return;
+      const nowSec = clock.getElapsedTime();
+      const possum = getPossumHit(event);
+      if (!possum) {
+        if (possessedPossum) {
+          releasePossessedPossum(nowSec);
+          event.preventDefault();
+        }
+        return;
+      }
+
+      if (possum === possessedPossum) {
+        releasePossessedPossum(nowSec);
+      } else {
+        possessPossum(possum, nowSec);
+      }
+      event.preventDefault();
+    }
 
     function setSurfaceBasis(normal) {
       const basisSeed = Math.abs(normal.y) > 0.92 ? axisX : upAxis;
@@ -2206,6 +3437,15 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+
+    function updateOrbitPivotFromClient(clientX, clientY) {
+      setPointerFromEvent({ clientX, clientY });
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObject(ball, false)[0];
+      if (!hit) return false;
+      controls.target.copy(hit.point);
+      return true;
     }
 
     function getBallHit(event) {
@@ -2510,6 +3750,25 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       return clock.getElapsedTime() - ageSeconds;
     }
 
+    function findBabyPossumForHat(possumId, normalPayload) {
+      const byId = possumById.get(String(possumId || ""));
+      if (byId && byId.isBaby && !byId.warriorRoseId) return byId;
+      if (!normalPayload) return null;
+      fromVecPayload(remoteNormal, normalPayload).normalize();
+      let best = null;
+      let bestScore = 0.7;
+      for (let i = 0; i < possumNpcs.length; i++) {
+        const possum = possumNpcs[i];
+        if (!possum.isBaby || possum.warriorRoseId) continue;
+        const score = possum.normal.dot(remoteNormal);
+        if (score > bestScore) {
+          best = possum;
+          bestScore = score;
+        }
+      }
+      return best;
+    }
+
     function handleMultiplayerMessage(message, allowSelf = false, replay = false) {
       if (!message) return;
       if (message.type === "snapshot") {
@@ -2565,9 +3824,31 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         if (!payload.point || !payload.normal) return;
         fromVecPayload(remotePoint, payload.point);
         fromVecPayload(remoteNormal, payload.normal).normalize();
-        createFlowerAt(remotePoint, remoteNormal, {
+        spawnFlowerSeedAt(remotePoint, remoteNormal, false, {
           flowerId: payload.flowerId,
           roseId: payload.roseId,
+          seed: Number(payload.seed) || 1
+        });
+        return;
+      }
+
+      if (message.type === "thought_flowerhead_spawn") {
+        if (!payload.point || !payload.normal) return;
+        fromVecPayload(remotePoint, payload.point);
+        fromVecPayload(remoteNormal, payload.normal).normalize();
+        spawnFlowerheadRoseAt(remotePoint, remoteNormal, false, {
+          roseId: payload.roseId,
+          seed: Number(payload.seed) || 1,
+          rotation: Number(payload.rotation) || 0
+        });
+        return;
+      }
+
+      if (message.type === "thought_baby_spawn") {
+        if (!payload.normal) return;
+        fromVecPayload(remoteNormal, payload.normal).normalize();
+        spawnThoughtBabyAt(remoteNormal, clock.getElapsedTime(), false, {
+          possumId: payload.possumId,
           seed: Number(payload.seed) || 1
         });
         return;
@@ -2576,7 +3857,6 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       if (message.type === "cheese_seed") {
         if (!payload.point || !payload.normal) return;
         const plantedAt = resolveNetworkPlantedAt(payload, message.serverTs);
-        if (clock.getElapsedTime() - plantedAt > CHEESE_LIFETIME_SECONDS) return;
         fromVecPayload(remotePoint, payload.point);
         fromVecPayload(remoteNormal, payload.normal).normalize();
         createCheeseMushroomAt(remotePoint, remoteNormal, {
@@ -2584,14 +3864,24 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
           seed: Number(payload.seed) || 1,
           plantedAt
         });
+        nextPossumImmigrationSec = Math.min(nextPossumImmigrationSec, clock.getElapsedTime() + 0.9);
+        return;
+      }
+
+      if (message.type === "cheese_pop") {
+        const mushroom = cheeseMushroomsById.get(payload.mushroomId);
+        if (!mushroom) return;
+        popCheeseMushroom(mushroom, Number(payload.seed) || nextActionSeed());
         return;
       }
 
       if (message.type === "rose_pick") {
         const rose = rosesById.get(payload.roseId);
         if (!rose) return;
+        clearRosePossumOwner(rose, clock.getElapsedTime());
         if (rose.ownerFlower) rose.ownerFlower.rose = null;
         rose.ownerFlower = null;
+        rose.ownerPossum = null;
         if (rose.group.parent) rose.group.parent.remove(rose.group);
         scene.add(rose.group);
         rose.pickable = false;
@@ -2623,6 +3913,27 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         const flower = flowersById.get(payload.flowerId);
         if (!rose || !flower || flower.rose) return;
         attachRoseToFlower(flower, rose, Number(payload.rotation) || 0);
+        remoteCarriedRoseByPlayer.delete(senderId);
+        if (carriedRose === rose) {
+          carriedRose = null;
+          carryPreviewOnBall = false;
+        }
+        return;
+      }
+
+      if (message.type === "rose_place_baby_hat") {
+        const rose = remoteCarriedRoseByPlayer.get(senderId) || rosesById.get(payload.roseId);
+        if (!rose) return;
+        const rotation = Number(payload.rotation) || 0;
+        const target = findBabyPossumForHat(payload.possumId, payload.normal);
+        const nowSec = clock.getElapsedTime();
+        if (target) {
+          attachRoseToBabyWarrior(target, rose, rotation, nowSec);
+        } else {
+          fromVecPayload(remoteNormal, payload.normal || { x: 0, y: 1, z: 0 }).normalize();
+          remotePoint.copy(ball.position).addScaledVector(remoteNormal, ballRadius + 0.001);
+          placeRoseOnBall(rose, remotePoint, remoteNormal, rotation);
+        }
         remoteCarriedRoseByPlayer.delete(senderId);
         if (carriedRose === rose) {
           carriedRose = null;
@@ -3020,8 +4331,74 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     function onPointerDown(event) {
       if (isUIInteractionTarget(event)) return;
+      if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+        lastPointerClientX = event.clientX;
+        lastPointerClientY = event.clientY;
+      }
       const mode = toolModeEl.value;
       broadcastCursorFromEvent(event, true);
+      if (carriedThoughtItem) {
+        event.preventDefault();
+        return;
+      }
+
+      if (possessedPossum) {
+        if (event.pointerType !== "touch" && event.button === 0) {
+          possessionLookDragging = true;
+          possessionLastLookX = event.clientX;
+          possessionLastLookY = event.clientY;
+          if (document.pointerLockElement !== renderer.domElement && renderer.domElement.requestPointerLock) {
+            try {
+              const lockPromise = renderer.domElement.requestPointerLock();
+              if (lockPromise && typeof lockPromise.catch === "function") {
+                lockPromise.catch(() => {});
+              }
+            } catch (error) {
+              // Drag fallback keeps look controls working when lock is unavailable.
+            }
+          }
+        }
+        event.preventDefault();
+        return;
+      }
+
+      if (event.pointerType !== "touch" && event.button === 0 && event.detail >= 2) {
+        const clickedPossum = getPossumHit(event);
+        if (clickedPossum) {
+          event.preventDefault();
+          return;
+        }
+      }
+
+      if (event.pointerType === "touch" || event.button === 0) {
+        const thoughtPair = carriedRose ? null : getBabyThinkItemHit(event);
+        if (thoughtPair) {
+          beginCarriedThoughtItem(thoughtPair, event, clock.getElapsedTime());
+          controls.enabled = false;
+          event.preventDefault();
+          return;
+        }
+
+        const bubblePair = getBabyThinkBubbleHit(event);
+        if (bubblePair) {
+          cycleBabyThinkBubble(bubblePair, clock.getElapsedTime());
+          event.preventDefault();
+          return;
+        }
+
+        const clickedMushroom = getCheeseMushroomHit(event);
+        if (clickedMushroom) {
+          const seed = nextActionSeed();
+          if (popCheeseMushroom(clickedMushroom, seed)) {
+            sendMultiplayer("cheese_pop", {
+              mushroomId: clickedMushroom.id,
+              seed
+            });
+          }
+          event.preventDefault();
+          return;
+        }
+      }
 
       if (event.pointerType === "touch") {
         activeTouchPointers.add(event.pointerId);
@@ -3080,7 +4457,34 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     }
 
     function onPointerMove(event) {
+      if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+        lastPointerClientX = event.clientX;
+        lastPointerClientY = event.clientY;
+      }
       broadcastCursorFromEvent(event);
+      if (
+        controls.enabled &&
+        !possessedPossum &&
+        !carriedThoughtItem &&
+        !painting &&
+        !touchPainting &&
+        !mouseActionLock &&
+        !touchActionLock
+      ) {
+        const mouseDrag = event.pointerType !== "touch" && (event.buttons & 1 || event.buttons & 2);
+        const touchDrag = event.pointerType === "touch" && activeTouchPointers.size >= 2;
+        if (mouseDrag || touchDrag) {
+          updateOrbitPivotFromClient(lastPointerClientX, lastPointerClientY);
+        }
+      }
+      if (carriedThoughtItem) {
+        updateCarriedThoughtItemPreview(event, clock.getElapsedTime());
+        return;
+      }
+      if (possessedPossum) {
+        updatePossessionLookFromPointer(event);
+        return;
+      }
       const mode = toolModeEl.value;
       if (mode !== "fur") {
         if (mode === "cloud") {
@@ -3159,6 +4563,27 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     }
 
     function onPointerUp(event) {
+      if (carriedThoughtItem) {
+        const pointerMatches = (
+          carriedThoughtItem.pointerId === null ||
+          !Number.isFinite(event.pointerId) ||
+          event.pointerId === carriedThoughtItem.pointerId
+        );
+        if (pointerMatches) {
+          stopCarriedThoughtItem(event.type !== "pointercancel", clock.getElapsedTime());
+          if (event.pointerType === "touch") activeTouchPointers.delete(event.pointerId);
+          painting = false;
+          touchPainting = false;
+          lastPaintPosition = null;
+          touchLastPaintPosition = null;
+          controls.enabled = !possessedPossum;
+          return;
+        }
+      }
+      if (possessedPossum) {
+        if (event.pointerType !== "touch") possessionLookDragging = false;
+        return;
+      }
       const mode = toolModeEl.value;
       if (event.pointerType === "touch") {
         activeTouchPointers.delete(event.pointerId);
@@ -3205,16 +4630,59 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       lastPaintPosition = null;
     }
 
+    function onKeyDown(event) {
+      if (isKeyboardTypingTarget(event.target)) return;
+      if (!possessedPossum) return;
+      if (event.code === "Escape") {
+        releasePossessedPossum(clock.getElapsedTime());
+        event.preventDefault();
+        return;
+      }
+
+      if (
+        event.code === "KeyW" ||
+        event.code === "KeyA" ||
+        event.code === "KeyS" ||
+        event.code === "KeyD" ||
+        event.code === "ArrowUp" ||
+        event.code === "ArrowDown" ||
+        event.code === "ArrowLeft" ||
+        event.code === "ArrowRight"
+      ) {
+        possessionKeys.add(event.code);
+        event.preventDefault();
+      }
+    }
+
+    function onKeyUp(event) {
+      if (
+        event.code === "KeyW" ||
+        event.code === "KeyA" ||
+        event.code === "KeyS" ||
+        event.code === "KeyD" ||
+        event.code === "ArrowUp" ||
+        event.code === "ArrowDown" ||
+        event.code === "ArrowLeft" ||
+        event.code === "ArrowRight"
+      ) {
+        possessionKeys.delete(event.code);
+      }
+    }
+
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("dblclick", onDoubleClick);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
 
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.2));
+      if (typeof controls.handleResize === "function") controls.handleResize();
     });
 
     const clock = new THREE.Clock();
@@ -3242,6 +4710,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         grassShader.uniforms.uSwish.value = swish * 0.35;
       }
       processGrassBursts(t);
+      updateBabyThinkPairs(t, dt);
       updatePossumNpcs(t, dt);
       updateFlowers(t);
       updateCheeseMushrooms(t);
@@ -3252,7 +4721,10 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       }
       updateCloudsAndTornado(t, dt);
       key.position.x = 1.6 + Math.sin(t * 0.35) * 0.7;
-      controls.update();
+      const usingPossessionCamera = updatePossessionCamera(t, dt);
+      if (!usingPossessionCamera) {
+        controls.update();
+      }
       renderer.render(scene, camera);
     }
     animate();

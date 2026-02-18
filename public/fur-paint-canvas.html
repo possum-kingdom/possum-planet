@@ -790,6 +790,8 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       touchPainting = false;
       lastPaintPosition = null;
       touchLastPaintPosition = null;
+      carryPreviewOnBall = false;
+      seedPreviewOnBall = false;
       endCloudSwirl();
       controls.enabled = !possessedPossum;
       syncLabels();
@@ -837,12 +839,14 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     const flowersGroup = new THREE.Group();
     const looseRosesGroup = new THREE.Group();
+    const looseSeedsGroup = new THREE.Group();
     const cheeseMushroomsGroup = new THREE.Group();
     const cheesePoofGroup = new THREE.Group();
     const possumNpcGroup = new THREE.Group();
     const babyThinkBubbleGroup = new THREE.Group();
     scene.add(flowersGroup);
     scene.add(looseRosesGroup);
+    scene.add(looseSeedsGroup);
     scene.add(cheeseMushroomsGroup);
     scene.add(cheesePoofGroup);
     scene.add(possumNpcGroup);
@@ -851,8 +855,11 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const flowers = [];
     const flowersById = new Map();
     const rosesById = new Map();
+    const seedPods = [];
+    const seedPodsById = new Map();
     const cheeseMushrooms = [];
     const cheeseMushroomsById = new Map();
+    const seedPodPickColliders = [];
     const cheeseMushroomPickColliders = [];
     const cheesePoofs = [];
     const possumNpcs = [];
@@ -864,8 +871,10 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     const rosePickColliders = [];
     const flowerStemTargets = [];
     let carriedRose = null;
+    let carriedSeedPod = null;
     let carriedThoughtItem = null;
     let carryPreviewOnBall = false;
+    let seedPreviewOnBall = false;
     let localEntityCounter = 0;
     let mouseActionLock = false;
     let touchActionLock = false;
@@ -927,6 +936,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     cheeseStemGeo.translate(0, 0.029, 0);
     const cheeseCapGeo = new THREE.SphereGeometry(0.04, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.58);
     const cheeseSpotGeo = new THREE.SphereGeometry(0.008, 10, 8);
+    const seedPodPickGeo = new THREE.SphereGeometry(0.03, 10, 8);
     const cheesePickGeo = new THREE.SphereGeometry(0.055, 12, 10);
     const thoughtItemPickGeo = new THREE.SphereGeometry(0.04, 10, 8);
     const cheeseDustGeo = new THREE.SphereGeometry(0.01, 8, 6);
@@ -2247,6 +2257,54 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       return rose;
     }
 
+    function createSeedPod(seedPodId = createEntityId("seedpod"), options = {}) {
+      const existing = seedPodsById.get(seedPodId);
+      if (existing) return existing;
+      const seedValue = Number(options.seedValue) || nextActionSeed();
+      const seedPod = {
+        id: seedPodId,
+        seedValue,
+        group: new THREE.Group(),
+        mesh: null,
+        collider: null,
+        normal: new THREE.Vector3(0, 1, 0),
+        spinPhase: Math.random() * Math.PI * 2,
+        pickable: true
+      };
+
+      const mesh = new THREE.Mesh(seedGeo, seedMat);
+      mesh.scale.setScalar(1.95);
+      seedPod.group.add(mesh);
+      seedPod.mesh = mesh;
+
+      const collider = new THREE.Mesh(seedPodPickGeo, invisiblePickMat);
+      collider.userData.seedPod = seedPod;
+      collider.userData.pickable = true;
+      seedPod.group.add(collider);
+      seedPod.collider = collider;
+
+      seedPod.group.userData.seedPod = seedPod;
+      seedPods.push(seedPod);
+      seedPodsById.set(seedPodId, seedPod);
+      seedPodPickColliders.push(collider);
+      return seedPod;
+    }
+
+    function removeSeedPod(seedPod) {
+      if (!seedPod) return false;
+      if (carriedSeedPod === seedPod) {
+        carriedSeedPod = null;
+        seedPreviewOnBall = false;
+      }
+      if (seedPod.group.parent) seedPod.group.parent.remove(seedPod.group);
+      const podIndex = seedPods.indexOf(seedPod);
+      if (podIndex >= 0) seedPods.splice(podIndex, 1);
+      const colliderIndex = seedPodPickColliders.indexOf(seedPod.collider);
+      if (colliderIndex >= 0) seedPodPickColliders.splice(colliderIndex, 1);
+      seedPodsById.delete(seedPod.id);
+      return true;
+    }
+
     function attachRoseToFlower(flower, rose, rotationY = Math.random() * Math.PI * 2) {
       if (!flower || !rose || flower.rose) return false;
       clearRosePossumOwner(rose, clock.getElapsedTime());
@@ -2532,13 +2590,22 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       if (carriedRose && carriedRose.group.parent) {
         carriedRose.group.parent.remove(carriedRose.group);
       }
+      if (carriedSeedPod && carriedSeedPod.group.parent) {
+        carriedSeedPod.group.parent.remove(carriedSeedPod.group);
+      }
       carriedRose = null;
+      carriedSeedPod = null;
       carryPreviewOnBall = false;
+      seedPreviewOnBall = false;
       flowersGroup.clear();
       looseRosesGroup.clear();
+      looseSeedsGroup.clear();
       flowers.length = 0;
       flowersById.clear();
       rosesById.clear();
+      seedPods.length = 0;
+      seedPodsById.clear();
+      seedPodPickColliders.length = 0;
       cheeseMushroomsGroup.clear();
       cheeseMushrooms.length = 0;
       cheeseMushroomsById.clear();
@@ -2564,6 +2631,15 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     spawnBabyPossumBtn.addEventListener("click", () => {
       debugSpawnBabyPossum(clock.getElapsedTime());
     });
+
+    function updateSeedPods(nowSec) {
+      for (let i = 0; i < seedPods.length; i++) {
+        const seedPod = seedPods[i];
+        if (!seedPod || seedPod === carriedSeedPod || !seedPod.mesh) continue;
+        seedPod.mesh.rotation.y = nowSec * 1.9 + seedPod.spinPhase;
+        seedPod.mesh.rotation.x = Math.sin(nowSec * 4.2 + seedPod.spinPhase) * 0.12;
+      }
+    }
 
     function updateFlowers(nowSec) {
       for (let i = 0; i < flowers.length; i++) {
@@ -2647,6 +2723,25 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         if (!rose || !hit.parent) continue;
         if (!hit.userData.pickable) continue;
         return rose;
+      }
+      return null;
+    }
+
+    function getSeedPodHit(event) {
+      if (seedPodPickColliders.length === 0) return null;
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const ballHit = raycaster.intersectObject(ball, false)[0];
+      const maxDistance = ballHit ? ballHit.distance + 0.2 : Number.POSITIVE_INFINITY;
+      const hits = raycaster.intersectObjects(seedPodPickColliders, false);
+      for (let i = 0; i < hits.length; i++) {
+        const hitData = hits[i];
+        if (hitData.distance > maxDistance) continue;
+        const seedPod = hitData.object.userData.seedPod;
+        if (!seedPod || !hitData.object.parent) continue;
+        if (!hitData.object.userData.pickable) continue;
+        if (!seedPodsById.has(seedPod.id)) continue;
+        return seedPod;
       }
       return null;
     }
@@ -2837,6 +2932,17 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       carriedRose.group.rotateZ(Math.sin(nowSec * 5.5) * 0.08);
     }
 
+    function setCarriedSeedInFront(nowSec) {
+      if (!carriedSeedPod) return;
+      camera.getWorldDirection(carryDir);
+      carriedSeedPod.group.position.copy(camera.position).addScaledVector(carryDir, 0.64);
+      carriedSeedPod.group.position.y -= 0.05;
+      carriedSeedPod.group.quaternion.copy(camera.quaternion);
+      carriedSeedPod.group.rotateX(-0.24);
+      carriedSeedPod.group.rotateY(nowSec * 2.2 + carriedSeedPod.spinPhase);
+      carriedSeedPod.group.rotateZ(Math.sin(nowSec * 6.1 + carriedSeedPod.spinPhase) * 0.09);
+    }
+
     function previewCarriedRoseAtPointer(event, nowSec) {
       if (!carriedRose) return;
       const babyTarget = getBabyPossumHatHit(event);
@@ -2865,6 +2971,23 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       carriedRose.group.rotateY(nowSec * 1.8);
     }
 
+    function previewCarriedSeedAtPointer(event, nowSec) {
+      if (!carriedSeedPod) return;
+      const hit = getBallHit(event);
+      if (!hit) {
+        seedPreviewOnBall = false;
+        setCarriedSeedInFront(nowSec);
+        return;
+      }
+      seedPreviewOnBall = true;
+      carryNormal.copy(hit.normal).normalize();
+      carriedSeedPod.group.position.copy(hit.point).addScaledVector(carryNormal, 0.02);
+      carryQuat.setFromUnitVectors(upAxis, carryNormal);
+      carriedSeedPod.group.quaternion.copy(carryQuat);
+      carriedSeedPod.group.rotateY(nowSec * 2.6 + carriedSeedPod.spinPhase);
+      carriedSeedPod.group.rotateX(Math.sin(nowSec * 5.2 + carriedSeedPod.spinPhase) * 0.12);
+    }
+
     function pickRose(rose, nowSec) {
       if (!rose || carriedRose === rose) return false;
       clearRosePossumOwner(rose, nowSec);
@@ -2877,6 +3000,18 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       carriedRose = rose;
       carryPreviewOnBall = false;
       setCarriedRoseInFront(nowSec);
+      return true;
+    }
+
+    function pickSeedPod(seedPod, nowSec = clock.getElapsedTime()) {
+      if (!seedPod || carriedSeedPod === seedPod) return false;
+      seedPod.pickable = false;
+      seedPod.collider.userData.pickable = false;
+      if (seedPod.group.parent) seedPod.group.parent.remove(seedPod.group);
+      scene.add(seedPod.group);
+      carriedSeedPod = seedPod;
+      seedPreviewOnBall = false;
+      setCarriedSeedInFront(nowSec);
       return true;
     }
 
@@ -2896,6 +3031,20 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       rose.group.scale.setScalar(1);
       rose.pickable = true;
       rose.collider.userData.pickable = true;
+      return true;
+    }
+
+    function placeSeedPodOnBall(seedPod, point, normal, rotationY = Math.random() * Math.PI * 2) {
+      if (!seedPod) return false;
+      if (seedPod.group.parent) seedPod.group.parent.remove(seedPod.group);
+      looseSeedsGroup.add(seedPod.group);
+      seedPod.normal.copy(normal).normalize();
+      seedPod.group.position.copy(point).addScaledVector(seedPod.normal, 0.02);
+      carryQuat.setFromUnitVectors(upAxis, seedPod.normal);
+      seedPod.group.quaternion.copy(carryQuat);
+      seedPod.group.rotateY(rotationY);
+      seedPod.pickable = true;
+      seedPod.collider.userData.pickable = true;
       return true;
     }
 
@@ -3044,8 +3193,30 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       return beginCloudSwirl(event);
     }
 
+    function hasGrassAtNormal(normal) {
+      if (!normal) return false;
+      radial.copy(normal);
+      if (radial.lengthSq() < 0.0001) return false;
+      radial.normalize();
+      const cellKey = surfaceCellKey(radial);
+      return underCellIndices.has(cellKey) || guardCellIndices.has(cellKey);
+    }
+
+    function spawnSeedPodAt(point, normal, options = {}) {
+      if (!point || !normal) return null;
+      const seedPodId = options.seedPodId || createEntityId("seedpod");
+      const seedValue = Number(options.seedValue) || nextActionSeed();
+      const rotation = Number.isFinite(Number(options.rotation))
+        ? Number(options.rotation)
+        : ((seedValue / 4294967296) * Math.PI * 2);
+      const seedPod = createSeedPod(seedPodId, { seedValue });
+      if (!placeSeedPodOnBall(seedPod, point, normal, rotation)) return null;
+      return seedPod;
+    }
+
     function spawnFlowerSeedAt(point, normal, broadcast = true, options = {}) {
       if (!point || !normal) return null;
+      if (!hasGrassAtNormal(normal)) return null;
       const flowerId = options.flowerId || createEntityId("flower");
       const roseId = options.roseId || createEntityId("rose");
       const seed = Number(options.seed) || nextActionSeed();
@@ -3100,16 +3271,42 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     }
 
     function spawnThoughtIdeaAtPoint(type, point, normal, nowSec = clock.getElapsedTime(), broadcast = true) {
-      if (type === "seed") return Boolean(spawnFlowerSeedAt(point, normal, broadcast));
+      if (type === "seed") return Boolean(spawnSeedPodAt(point, normal));
       if (type === "flowerhead") return Boolean(spawnFlowerheadRoseAt(point, normal, broadcast));
       if (type === "baby") return Boolean(spawnThoughtBabyAt(normal, nowSec, broadcast));
       return false;
     }
 
     function handleSeedMode(event) {
-      const hit = getBallHit(event);
-      if (!hit) return false;
-      return Boolean(spawnFlowerSeedAt(hit.point, hit.normal, true));
+      const nowSec = clock.getElapsedTime();
+      if (carriedSeedPod) {
+        const hit = getBallHit(event);
+        if (!hit) return false;
+        const heldSeed = carriedSeedPod;
+        if (hasGrassAtNormal(hit.normal)) {
+          const grew = spawnFlowerSeedAt(hit.point, hit.normal, true, {
+            seed: heldSeed.seedValue
+          });
+          if (grew) {
+            removeSeedPod(heldSeed);
+            return true;
+          }
+        }
+        const rotation = (nextActionSeed() / 4294967296) * Math.PI * 2;
+        placeSeedPodOnBall(heldSeed, hit.point, hit.normal, rotation);
+        carriedSeedPod = null;
+        seedPreviewOnBall = false;
+        return true;
+      }
+
+      const seedPod = getSeedPodHit(event);
+      if (seedPod) return pickSeedPod(seedPod, nowSec);
+
+      const newSeedPod = createSeedPod(createEntityId("seedpod"), {
+        seedValue: nextActionSeed()
+      });
+      if (!newSeedPod) return false;
+      return pickSeedPod(newSeedPod, nowSec);
     }
 
     function handleCheeseMode(event) {
@@ -3206,8 +3403,6 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     let touchLastPaintPosition = null;
     let touchLastPaintMs = 0;
     const activeTouchPointers = new Set();
-    let lastPointerClientX = window.innerWidth * 0.5;
-    let lastPointerClientY = window.innerHeight * 0.5;
 
     const tempObj = new THREE.Object3D();
     const hitPos = new THREE.Vector3();
@@ -3437,15 +3632,6 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    }
-
-    function updateOrbitPivotFromClient(clientX, clientY) {
-      setPointerFromEvent({ clientX, clientY });
-      raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObject(ball, false)[0];
-      if (!hit) return false;
-      controls.target.copy(hit.point);
-      return true;
     }
 
     function getBallHit(event) {
@@ -4331,10 +4517,6 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
 
     function onPointerDown(event) {
       if (isUIInteractionTarget(event)) return;
-      if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
-        lastPointerClientX = event.clientX;
-        lastPointerClientY = event.clientY;
-      }
       const mode = toolModeEl.value;
       broadcastCursorFromEvent(event, true);
       if (carriedThoughtItem) {
@@ -4371,7 +4553,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       }
 
       if (event.pointerType === "touch" || event.button === 0) {
-        const thoughtPair = carriedRose ? null : getBabyThinkItemHit(event);
+        const thoughtPair = (carriedRose || carriedSeedPod) ? null : getBabyThinkItemHit(event);
         if (thoughtPair) {
           beginCarriedThoughtItem(thoughtPair, event, clock.getElapsedTime());
           controls.enabled = false;
@@ -4457,26 +4639,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
     }
 
     function onPointerMove(event) {
-      if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
-        lastPointerClientX = event.clientX;
-        lastPointerClientY = event.clientY;
-      }
       broadcastCursorFromEvent(event);
-      if (
-        controls.enabled &&
-        !possessedPossum &&
-        !carriedThoughtItem &&
-        !painting &&
-        !touchPainting &&
-        !mouseActionLock &&
-        !touchActionLock
-      ) {
-        const mouseDrag = event.pointerType !== "touch" && (event.buttons & 1 || event.buttons & 2);
-        const touchDrag = event.pointerType === "touch" && activeTouchPointers.size >= 2;
-        if (mouseDrag || touchDrag) {
-          updateOrbitPivotFromClient(lastPointerClientX, lastPointerClientY);
-        }
-      }
       if (carriedThoughtItem) {
         updateCarriedThoughtItemPreview(event, clock.getElapsedTime());
         return;
@@ -4490,10 +4653,16 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
         if (mode === "cloud") {
           trackCloudSwirl(event);
           carryPreviewOnBall = false;
+          seedPreviewOnBall = false;
+        } else if (mode === "seed" && carriedSeedPod) {
+          carryPreviewOnBall = false;
+          previewCarriedSeedAtPointer(event, clock.getElapsedTime());
         } else if (mode === "pluck" && carriedRose) {
+          seedPreviewOnBall = false;
           previewCarriedRoseAtPointer(event, clock.getElapsedTime());
         } else {
           carryPreviewOnBall = false;
+          seedPreviewOnBall = false;
         }
         return;
       }
@@ -4596,6 +4765,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
             touchActionLock = false;
             controls.enabled = true;
             carryPreviewOnBall = false;
+            seedPreviewOnBall = false;
           }
           return;
         }
@@ -4622,6 +4792,7 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
           controls.enabled = true;
         }
         carryPreviewOnBall = false;
+        seedPreviewOnBall = false;
         return;
       }
 
@@ -4712,12 +4883,16 @@ transformed.z += tipWeight * swayB * uSwish * uSwayScale * 0.8;`
       processGrassBursts(t);
       updateBabyThinkPairs(t, dt);
       updatePossumNpcs(t, dt);
+      updateSeedPods(t);
       updateFlowers(t);
       updateCheeseMushrooms(t);
       updateCheesePoofs(t);
       updateRemotePlayers(t);
       if (carriedRose && !carryPreviewOnBall) {
         setCarriedRoseInFront(t);
+      }
+      if (carriedSeedPod && !seedPreviewOnBall) {
+        setCarriedSeedInFront(t);
       }
       updateCloudsAndTornado(t, dt);
       key.position.x = 1.6 + Math.sin(t * 0.35) * 0.7;
